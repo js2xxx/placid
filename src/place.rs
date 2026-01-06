@@ -1,11 +1,5 @@
 use core::{
-    any::Any,
-    fmt,
-    marker::{CoercePointee, PhantomData},
-    mem::{self, MaybeUninit},
-    ops::{Deref, DerefMut},
-    ptr::NonNull,
-    slice,
+    any::Any, borrow::{Borrow, BorrowMut}, fmt, hash::{Hash, Hasher}, marker::{CoercePointee, PhantomData}, mem::{self, MaybeUninit}, ops::{Deref, DerefMut}, ptr::NonNull, slice
 };
 
 use crate::{
@@ -73,8 +67,8 @@ impl<T> Place<T> {
     /// Creates a mutable reference to a place from a mutable reference to a
     /// `MaybeUninit<T>`.
     ///
-    /// This allows converting existing `MaybeUninit` values into `Place` references
-    /// for use with the place initialization API.
+    /// This allows converting existing `MaybeUninit` values into `Place`
+    /// references for use with the place initialization API.
     ///
     /// # Examples
     ///
@@ -114,7 +108,8 @@ impl<T> Place<T> {
 
     /// Initializes the place with a value using the given initializer.
     ///
-    /// This is a convenience method that combines `uninit()` and `write()` in one call.
+    /// This is a convenience method that combines `uninit()` and `write()` in
+    /// one call.
     ///
     /// # Panics
     ///
@@ -138,8 +133,9 @@ impl<T> Place<T> {
 
     /// Initializes the place with a pinned value using the given initializer.
     ///
-    /// This is similar to `write()` but ensures the value remains pinned in memory,
-    /// which is required for types that implement the pinning protocol.
+    /// This is similar to `write()` but ensures the value remains pinned in
+    /// memory, which is required for types that implement the pinning
+    /// protocol.
     ///
     /// # Panics
     ///
@@ -288,11 +284,17 @@ macro_rules! place {
 
 // General PlaceRef implementations
 
+// SAFETY: PlaceRef is Send if T is Send.
+unsafe impl<'a, T: ?Sized + Send, S: PlaceState> Send for PlaceRef<'a, T, S> {}
+// SAFETY: PlaceRef is Sync if T is Sync.
+unsafe impl<'a, T: ?Sized + Sync, S: PlaceState> Sync for PlaceRef<'a, T, S> {}
+
 impl<'a, T: ?Sized, S: PlaceState> PlaceRef<'a, T, S> {
     pub(crate) unsafe fn from_inner(inner: NonNull<T>) -> Self {
         PlaceRef { inner, state: PhantomData }
     }
 }
+
 impl<'a, T: ?Sized, S: PlaceState> Drop for PlaceRef<'a, T, S> {
     fn drop(&mut self) {
         // SAFETY: We are dropping the place, so we need to drop the value if it is
@@ -327,6 +329,18 @@ impl<'a, T: ?Sized> AsRef<T> for Own<'a, T> {
 
 impl<'a, T: ?Sized> AsMut<T> for Own<'a, T> {
     fn as_mut(&mut self) -> &mut T {
+        self
+    }
+}
+
+impl<'a, T: ?Sized> Borrow<T> for Own<'a, T> {
+    fn borrow(&self) -> &T {
+        self
+    }
+}
+
+impl<'a, T: ?Sized> BorrowMut<T> for Own<'a, T> {
+    fn borrow_mut(&mut self) -> &mut T {
         self
     }
 }
@@ -412,8 +426,8 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// object.
     ///
     /// The caller is responsible for managing the memory and ensuring that the
-    /// value is properly dropped when no longer needed. The memory itself remains
-    /// valid for the original lifetime of the place.
+    /// value is properly dropped when no longer needed. The memory itself
+    /// remains valid for the original lifetime of the place.
     ///
     /// # Examples
     ///
@@ -576,6 +590,87 @@ impl<'a, T: ?Sized + fmt::Display> fmt::Display for Own<'a, T> {
     }
 }
 
+impl<'a, T: ?Sized> fmt::Pointer for Own<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Pointer::fmt(&self.inner, f)
+    }
+}
+
+impl<'a, T: Clone> Own<'a, T> {
+    pub fn clone<'b>(&self, to: &'b mut Place<T>) -> Own<'b, T> {
+        to.write(|| (**self).clone())
+    }
+}
+
+impl<'a, T: Default> Own<'a, T> {
+    pub fn default(place: &'a mut Place<T>) -> Self {
+        place.write(T::default)
+    }
+}
+
+impl<'a, T> Default for Own<'a, [T]> {
+    fn default() -> Self {
+        Own {
+            inner: NonNull::from_mut(&mut []),
+            state: PhantomData,
+        }
+    }
+}
+
+impl<'a> Default for Own<'a, str> {
+    fn default() -> Self {
+        Own {
+            inner: NonNull::from_ref(""),
+            state: PhantomData,
+        }
+    }
+}
+
+impl<'a> Default for Own<'a, core::ffi::CStr> {
+    fn default() -> Self {
+        Own {
+            inner: NonNull::from_ref(c""),
+            state: PhantomData,
+        }
+    }
+}
+
+impl<'a, 'b, T: ?Sized + PartialEq<U>, U: ?Sized> PartialEq<Own<'b, U>> for Own<'a, T> {
+    fn eq(&self, other: &Own<'b, U>) -> bool {
+        **self == **other
+    }
+}
+
+impl<'a, T: ?Sized + Eq> Eq for Own<'a, T> {}
+
+impl<'a, 'b, T: ?Sized + PartialOrd<U>, U: ?Sized> PartialOrd<Own<'b, U>> for Own<'a, T> {
+    fn partial_cmp(&self, other: &Own<'b, U>) -> Option<core::cmp::Ordering> {
+        (**self).partial_cmp(&**other)
+    }
+}
+
+impl<'a, T: ?Sized + Ord> Ord for Own<'a, T> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        (**self).cmp(&**other)
+    }
+}
+
+impl<'a, T: ?Sized + Hash> Hash for Own<'a, T> {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        (**self).hash(state)
+    }
+}
+
+impl<'a, T: ?Sized + Hasher> Hasher for Own<'a, T> {
+    fn finish(&self) -> u64 {
+        (**self).finish()
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        (**self).write(bytes);
+    }
+}
+
 // Uninitialized PlaceRef implementations
 
 impl<'a, T> Deref for Uninit<'a, T> {
@@ -692,7 +787,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// let drop_slot = drop_slot!();
     /// unsafe {
     ///     uninit.as_mut_ptr().write(String::from("Pinned value"));
-    /// 
+    ///
     ///     // Then assume it's initialized and convert to pinned
     ///     let pinned = uninit.assume_init_pin(drop_slot);
     ///     assert_eq!(&*pinned, "Pinned value");
