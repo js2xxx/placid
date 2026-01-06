@@ -1,5 +1,13 @@
 use core::{
-    any::Any, borrow::{Borrow, BorrowMut}, fmt, hash::{Hash, Hasher}, marker::{CoercePointee, PhantomData}, mem::{self, MaybeUninit}, ops::{Deref, DerefMut}, ptr::NonNull, slice
+    any::Any,
+    borrow::{Borrow, BorrowMut},
+    fmt,
+    hash::{Hash, Hasher},
+    marker::{CoercePointee, PhantomData},
+    mem::{self, MaybeUninit},
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+    slice,
 };
 
 use crate::{
@@ -103,7 +111,7 @@ impl<T> Place<T> {
     /// ```
     pub const fn uninit(&mut self) -> Uninit<'_, T> {
         let inner = NonNull::new(self.0.as_mut_ptr()).unwrap();
-        Uninit { inner, state: PhantomData }
+        unsafe { Uninit::from_inner(inner) }
     }
 
     /// Initializes the place with a value using the given initializer.
@@ -214,6 +222,8 @@ impl PlaceState for Uninitialized {
 pub struct PlaceRef<'a, #[pointee] T: ?Sized, State: PlaceState> {
     pub(crate) inner: NonNull<T>,
     state: PhantomData<(State, &'a mut MaybeUninit<PhantomData<T>>)>,
+    // See the drop implementation for details on why this is needed.
+    owns_value: PhantomData<T>,
 }
 
 /// An owned reference that contains a fully initialized value of type `T`.
@@ -290,12 +300,18 @@ unsafe impl<'a, T: ?Sized + Send, S: PlaceState> Send for PlaceRef<'a, T, S> {}
 unsafe impl<'a, T: ?Sized + Sync, S: PlaceState> Sync for PlaceRef<'a, T, S> {}
 
 impl<'a, T: ?Sized, S: PlaceState> PlaceRef<'a, T, S> {
-    pub(crate) unsafe fn from_inner(inner: NonNull<T>) -> Self {
-        PlaceRef { inner, state: PhantomData }
+    pub(crate) const unsafe fn from_inner(inner: NonNull<T>) -> Self {
+        PlaceRef {
+            inner,
+            state: PhantomData,
+            owns_value: PhantomData,
+        }
     }
 }
 
-impl<'a, T: ?Sized, S: PlaceState> Drop for PlaceRef<'a, T, S> {
+// SAFETY: We have `owns_value: PhantomData<T>`, which tells the dropck that we
+// own a value of type T.
+unsafe impl<'a, #[may_dangle] T: ?Sized, S: PlaceState> Drop for PlaceRef<'a, T, S> {
     fn drop(&mut self) {
         // SAFETY: We are dropping the place, so we need to drop the value if it is
         // initialized.
@@ -468,7 +484,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
         // SAFETY: The caller must ensure that the pointer is valid and points to
         // an initialized value.
         let inner = unsafe { NonNull::new_unchecked(ptr) };
-        PlaceRef { inner, state: PhantomData }
+        unsafe { Own::from_inner(inner) }
     }
 
     /// Drops the value inside the place and converts it into an uninitialized
@@ -492,7 +508,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
 
         // SAFETY: We have exclusive ownership of the value, so we can drop it.
         unsafe { inner.drop_in_place() };
-        PlaceRef { inner, state: PhantomData }
+        unsafe { Uninit::from_inner(inner) }
     }
 }
 
@@ -516,7 +532,7 @@ impl<'a, T> Own<'a, T> {
         mem::forget(this);
         // SAFETY: We have exclusive ownership of the value, so we can take it out.
         let value = unsafe { inner.read() };
-        let place = PlaceRef { inner, state: PhantomData };
+        let place = unsafe { Uninit::from_inner(inner) };
         (value, place)
     }
 }
@@ -610,28 +626,19 @@ impl<'a, T: Default> Own<'a, T> {
 
 impl<'a, T> Default for Own<'a, [T]> {
     fn default() -> Self {
-        Own {
-            inner: NonNull::from_mut(&mut []),
-            state: PhantomData,
-        }
+        unsafe { Own::from_inner(NonNull::from_mut(&mut [])) }
     }
 }
 
 impl<'a> Default for Own<'a, str> {
     fn default() -> Self {
-        Own {
-            inner: NonNull::from_ref(""),
-            state: PhantomData,
-        }
+        unsafe { Own::from_inner(NonNull::from_ref("")) }
     }
 }
 
 impl<'a> Default for Own<'a, core::ffi::CStr> {
     fn default() -> Self {
-        Own {
-            inner: NonNull::from_ref(c""),
-            state: PhantomData,
-        }
+        unsafe { Own::from_inner(NonNull::from_ref(c"")) }
     }
 }
 
@@ -670,6 +677,9 @@ impl<'a, T: ?Sized + Hasher> Hasher for Own<'a, T> {
         (**self).write(bytes);
     }
 }
+
+#[cfg(feature = "fn-impl")]
+mod fn_impl;
 
 // Uninitialized PlaceRef implementations
 
@@ -757,7 +767,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     pub unsafe fn assume_init(self) -> Own<'a, T> {
         let inner = self.inner;
         mem::forget(self);
-        PlaceRef { inner, state: PhantomData }
+        unsafe { Own::from_inner(inner) }
     }
 
     /// Assumes that the reference is initialized and converts it into a pinned
@@ -796,7 +806,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     pub unsafe fn assume_init_pin<'b>(self, slot: DropSlot<'a, 'b, T>) -> OPin<'b, T> {
         let inner = self.inner;
         mem::forget(self);
-        OPin::new(Own { inner, state: PhantomData }, slot)
+        OPin::new(unsafe { Own::from_inner(inner) }, slot)
     }
 
     /// Initializes the reference with the given initializer and returns the
