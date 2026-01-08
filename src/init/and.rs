@@ -2,10 +2,16 @@ use core::pin::Pin;
 
 use crate::{
     Own, Uninit,
-    init::{Init, InitError, InitPin, InitPinError},
+    init::{Init, InitError, InitPin, InitPinError, IntoInit},
     pin::{DropSlot, POwn},
 };
 
+/// Chains initialization with a post-initialization closure for mutable access.
+///
+/// This initializer is created by calling the [`Init::and`] method, or by using
+/// the [`and()`] factory function. It's chainable with other initializers.
+///
+/// [`Init`]: crate::init::Init
 pub struct And<I, F> {
     init: I,
     f: F,
@@ -40,14 +46,30 @@ impl<I: Init, F: FnOnce(&mut I::Target)> Init for And<I, F> {
     }
 }
 
-pub fn and<I, F>(init: I, f: F) -> And<I, F>
+/// Chains initialization with a post-initialization closure for mutable access.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::{place, Own, init::*};
+///
+/// let owned: Own<Vec<_>> = place!(and(vec![1, 2, 3], |v| v.push(4)));
+/// assert_eq!(*owned, vec![1, 2, 3, 4]);
+/// ```
+pub fn and<M, I, F, T: ?Sized>(init: I, f: F) -> And<I::Init, F>
 where
-    I: Init,
-    F: FnOnce(&mut I::Target),
+    I: IntoInit<T, M>,
+    F: FnOnce(&mut T),
 {
-    And { init, f }
+    And { init: init.into_init(), f }
 }
 
+/// Chains initialization with a post-initialization closure for pinned mutable
+/// access.
+///
+/// This initializer is created by calling the [`InitPin::and_pin`] method, or
+/// by using the [`and_pin()`] factory function. It's chainable with other
+/// initializers.
 pub struct AndPin<I, F> {
     init: I,
     f: F,
@@ -68,10 +90,25 @@ impl<I: InitPin, F: FnOnce(Pin<&mut I::Target>)> InitPin for AndPin<I, F> {
     }
 }
 
-pub fn and_pin<I, F>(init: I, f: F) -> AndPin<I, F>
+/// Chains initialization with a post-initialization closure for pinned mutable
+/// access.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::{place, POwn, init::*};
+/// use core::pin::Pin;
+///
+/// let owned: POwn<Vec<_>> = place!(@pin and_pin(
+///     vec![1, 2, 3],
+///     |mut v: Pin<&mut Vec<_>>| v.as_mut().push(4),
+/// ));
+/// assert_eq!(*owned, [1, 2, 3, 4]);
+/// ```
+pub fn and_pin<M, I, F, T: ?Sized>(init: I, f: F) -> AndPin<I::Init, F>
 where
-    I: InitPin,
-    F: FnOnce(Pin<&mut I::Target>),
+    I: IntoInit<T, M>,
+    F: FnOnce(Pin<&mut T>),
 {
-    AndPin { init, f }
+    AndPin { init: init.into_init(), f }
 }

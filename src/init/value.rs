@@ -6,6 +6,9 @@ use crate::{
     pin::DropSlot,
 };
 
+/// Initializes a place with a directly-provided value.
+///
+/// This initializer is created by the [`value()`] factory function.
 pub struct Value<T>(T);
 
 impl<T> InitPin for Value<T> {
@@ -31,6 +34,34 @@ impl<T> Init for Value<T> {
     }
 }
 
+/// Creates an initializer for a directly-provided value.
+///
+/// This is a convenience factory function for creating a [`Value`] initializer.
+/// The value is moved into the place and cannot fail.
+///
+/// This is typically not needed directly, as the [`place!`] macro provides a
+/// more ergonomic interface:
+///
+/// ```rust
+/// use placid::place;
+///
+/// let owned = place!(42);
+/// assert_eq!(*owned, 42);
+/// ```
+///
+/// Instead, use the `value()` function directly to combine with other
+/// initializers:
+///
+/// ```rust
+/// use placid::{place, init::{value, Init}};
+///
+/// let uninit = place!(@uninit i32);
+/// let owned = uninit.write(value(100).and(|v| *v += 23));
+/// assert_eq!(*owned, 123);
+/// ```
+///
+/// [`Value`]: crate::init::Value
+/// [`place!`]: macro@crate::place
 pub const fn value<T>(value: T) -> Value<T> {
     Value(value)
 }
@@ -44,6 +75,9 @@ impl<T> IntoInit<T, Value<T>> for T {
     }
 }
 
+/// Initializes a place by calling a closure that returns a Result.
+///
+/// This initializer is created by the [`try_with()`] factory function.
 pub struct TryWith<F>(F);
 
 impl<T, E, F> InitPin for TryWith<F>
@@ -77,6 +111,38 @@ where
     }
 }
 
+/// Initializes a place by calling a closure that returns a Result.
+///
+/// This is similar to [`with`], but the closure returns a [`Result`],
+/// allowing for fallible initialization. If the closure returns an error, the
+/// initialization fails and the error is returned to the caller.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::{place, init::try_with};
+///
+/// let uninit = place!(@uninit u32);
+/// let result = uninit.try_write(try_with(|| {
+///     // Some computation that might fail
+///     if true {
+///         Ok(42u32)
+///     } else {
+///         Err("computation failed")
+///     }
+/// }));
+/// assert!(result.is_ok());
+/// assert_eq!(*result.unwrap(), 42);
+///
+/// // With a failing computation
+/// let uninit = place!(@uninit u32);
+/// let result = uninit.try_write(try_with(|| {
+///     Err::<u32, &str>("failed")
+/// }));
+/// assert!(result.is_err());
+/// ```
+///
+/// [`with`]: crate::init::with
 pub const fn try_with<T, F, E>(f: F) -> TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
@@ -96,6 +162,9 @@ where
     }
 }
 
+/// Initializes a place by calling a closure that returns a value.
+///
+/// This initializer is created by the [`with()`] factory function.
 pub struct With<F>(F);
 
 impl<T, F> InitPin for With<F>
@@ -123,6 +192,31 @@ where
     }
 }
 
+/// Creates an initializer from a closure that produces a value.
+///
+/// For a fallible counterpart, see [`try_with()`].
+///
+/// # Examples
+///
+/// Using the `with()` function:
+/// ```rust
+/// use placid::{place, init::with};
+///
+/// let uninit = place!(@uninit String);
+/// let owned = uninit.write(with(|| String::from("Lazy initialization")));
+/// assert_eq!(&*owned, "Lazy initialization");
+/// ```
+///
+/// Using with [`place!`] macro directly:
+/// 
+/// ```rust
+/// use placid::{place, Own};
+///
+/// let owned: Own<String> = place!(|| String::from("hello"));
+/// assert_eq!(&*owned, "hello");
+/// ```
+///
+/// [`place!`]: macro@crate::place
 pub const fn with<T, F>(f: F) -> With<F>
 where
     F: FnOnce() -> T,

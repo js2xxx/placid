@@ -166,7 +166,7 @@ impl<T> Place<T> {
         slot: DropSlot<'a, 'b, T>,
     ) -> POwn<'b, T>
     where
-        I: IntoInit<T, Marker, Init: Init, Error: fmt::Debug>,
+        I: IntoInit<T, Marker, Error: fmt::Debug>,
     {
         self.uninit().write_pin(init, slot)
     }

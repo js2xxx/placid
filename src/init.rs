@@ -19,11 +19,16 @@ pub struct InitPinError<'a, 'b, T: ?Sized, E> {
 }
 
 impl<'a, 'b, T: ?Sized, E> InitPinError<'a, 'b, T, E> {
-    pub fn from_init(err: InitError<'a, T, E>, slot: DropSlot<'a, 'b, T>) -> Self {
+    /// Maps the error contained in this `InitPinError` to a different error
+    /// type.
+    pub fn map<F, E2>(self, f: F) -> InitPinError<'a, 'b, T, E2>
+    where
+        F: FnOnce(E) -> E2,
+    {
         InitPinError {
-            error: err.error,
-            place: err.place,
-            slot,
+            error: f(self.error),
+            place: self.place,
+            slot: self.slot,
         }
     }
 }
@@ -51,27 +56,99 @@ pub trait InitPin: Sized {
     type Target: ?Sized;
     type Error;
 
+    /// Initializes a place with a pinned value.
+    ///
+    /// This method performs the actual initialization of an uninitialized
+    /// place, creating a pinned reference to the initialized value. It
+    /// requires both an uninitialized place and a drop slot to manage the
+    /// value's lifetime.
+    ///
+    /// # Arguments
+    ///
+    /// * `place` - The uninitialized place to initialize
+    /// * `slot` - The drop slot for managing the pinned value's lifetime
+    ///
+    /// # Returns
+    ///
+    /// Returns a [pinned owned reference] on success, or an [`InitPinError`]
+    /// containing the error and the failed place.
+    ///
+    /// [pinned owned reference]: crate::pin::POwn
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, Self::Target>,
         slot: DropSlot<'a, 'b, Self::Target>,
     ) -> InitPinResult<'a, 'b, Self>;
 
-    fn and<F: FnOnce(Pin<&mut Self::Target>)>(self, f: F) -> AndPin<Self, F> {
+    /// Chains a closure to execute after successful initialization with a
+    /// pinned reference.
+    ///
+    /// This method allows you to perform additional setup on the initialized
+    /// value while maintaining its pinned status. The closure receives a
+    /// mutable pinned reference to the newly initialized value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{place, POwn, init::*};
+    /// use core::pin::Pin;
+    ///
+    /// let owned: POwn<Vec<_>> = place!(@pin
+    ///     value(vec![1, 2, 3])
+    ///         .and_pin(|mut v: Pin<&mut Vec<_>>| v.as_mut().push(4))
+    /// );
+    /// assert_eq!(*owned, [1, 2, 3, 4]);
+    /// ```
+    fn and_pin<F: FnOnce(Pin<&mut Self::Target>)>(self, f: F) -> AndPin<Self, F> {
         and_pin(self, f)
     }
 
+    /// Provides a fallback initializer if this one fails.
+    ///
+    /// If initialization fails, the `other` initializer will be attempted
+    /// instead. The `other` initializer must produce the same target type
+    /// and have an error that can be converted to this initializer's error
+    /// type.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{place, Own, init::*};
+    ///
+    /// let owned: Own<u32> = place!(value(10u32).or(20u32));
+    /// assert_eq!(*owned, 10);
+    ///
+    /// let failed: Own<u32> = place!(try_with(|| u32::try_from(-1i32)).or(30u32));
+    /// assert_eq!(*failed, 30);
+    /// ```
     fn or<M, I2>(self, other: I2) -> Or<Self, I2, M>
     where
-        I2: IntoInit<Self::Target, M, Error = Self::Error>,
+        I2: IntoInit<Self::Target, M, Error: Into<Self::Error>>,
     {
         or(self, other)
     }
 
+    /// Provides a fallback initializer based on the error from this one.
+    ///
+    /// If initialization fails, the closure `f` is called with the error, and
+    /// the returned initializer is used instead. This allows for
+    /// error-dependent recovery.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{place, Own, init::*};
+    ///
+    /// let owned: Own<u32> = place!(try_with(|| u32::try_from(-1i32)).or_else(|err| {
+    ///     println!("Initialization failed with error: {}", err);
+    ///     value(42u32)
+    /// }));
+    /// assert_eq!(*owned, 42);
+    /// ```
     fn or_else<F, I2>(self, f: F) -> OrElse<Self, F>
     where
         F: FnOnce(Self::Error) -> I2,
-        I2: InitPin<Target = Self::Target, Error = Self::Error>,
+        I2: InitPin<Target = Self::Target, Error: Into<Self::Error>>,
     {
         or_else(self, f)
     }
@@ -89,11 +166,23 @@ pub struct InitError<'a, T: ?Sized, E> {
 }
 
 impl<'a, T: ?Sized, E> InitError<'a, T, E> {
+    /// Converts this error into an `InitPinError` by adding a drop slot.
     pub fn into_pin<'b>(self, slot: DropSlot<'a, 'b, T>) -> InitPinError<'a, 'b, T, E> {
         InitPinError {
             error: self.error,
             place: self.place,
             slot,
+        }
+    }
+
+    /// Maps the error contained in this `InitError` to a different error type.
+    pub fn map<F, E2>(self, f: F) -> InitError<'a, T, E2>
+    where
+        F: FnOnce(E) -> E2,
+    {
+        InitError {
+            error: f(self.error),
+            place: self.place,
         }
     }
 }
@@ -126,8 +215,38 @@ pub type InitResult<'a, I> = Result<
 /// This trait is used to abstract over the different ways a place can be
 /// initialized. See the implementors for more details.
 pub trait Init: InitPin {
+    /// Initializes a place with a value.
+    ///
+    /// This method performs the actual initialization of an uninitialized
+    /// place, creating an owned reference to the initialized value. Unlike
+    /// `init_pin`, this does not pin the value.
+    ///
+    /// # Arguments
+    ///
+    /// * `place` - The uninitialized place to initialize
+    ///
+    /// # Returns
+    ///
+    /// Returns an [owned reference] on success, or an [`InitError`]
+    /// containing the error and the failed place.
+    ///
+    /// [owned reference]: crate::Own
     fn init(self, place: Uninit<'_, Self::Target>) -> InitResult<'_, Self>;
 
+    /// Chains a closure to execute after successful initialization.
+    ///
+    /// This method allows you to perform additional setup on the initialized
+    /// value. The closure receives a mutable reference to the newly
+    /// initialized value.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{place, Own, init::*};
+    ///
+    /// let owned: Own<Vec<_>> = place!(value(vec![1, 2, 3]).and(|v| v.push(4)));
+    /// assert_eq!(*owned, vec![1, 2, 3, 4]);
+    /// ```
     fn and<F: FnOnce(&mut Self::Target)>(self, f: F) -> And<Self, F> {
         and(self, f)
     }
