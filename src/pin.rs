@@ -139,7 +139,7 @@ macro_rules! drop_slot {
 /// [`mem::forget`]ed, which would lead to violations of the pinning guarantees.
 /// See the dropping guarantee section in [`core::pin`] for more details.
 ///
-/// `OPin` combines pinning with ownership, ensuring that:
+/// `POwn` combines pinning with ownership, ensuring that:
 /// - The value cannot be moved out of its memory location
 /// - The value is guaranteed to be properly dropped
 /// - The value cannot be forgotten (unlike regular `Pin<T>`)
@@ -155,14 +155,14 @@ macro_rules! drop_slot {
 /// // The value is now pinned and cannot be moved
 /// assert_eq!(*pinned, vec![1, 2, 3]);
 /// ```
-pub struct OPin<'b, T: ?Sized> {
+pub struct POwn<'b, T: ?Sized> {
     drop_flag: &'b Cell<bool>,
     inner: NonNull<T>,
 }
 
-impl<'b, T: ?Sized> Unpin for OPin<'b, T> {}
+impl<'b, T: ?Sized> Unpin for POwn<'b, T> {}
 
-impl<'b, T: ?Sized> Drop for OPin<'b, T> {
+impl<'b, T: ?Sized> Drop for POwn<'b, T> {
     fn drop(&mut self) {
         // Mark the value as dropped.
         self.drop_flag.set(true);
@@ -171,8 +171,8 @@ impl<'b, T: ?Sized> Drop for OPin<'b, T> {
     }
 }
 
-impl<'b, T: ?Sized> OPin<'b, T> {
-    /// Creates a new `OPin` from a pinned owned reference and a drop flag.
+impl<'b, T: ?Sized> POwn<'b, T> {
+    /// Creates a new `POwn` from a pinned owned reference and a drop flag.
     ///
     /// This method is typically called by methods like [`Own::into_pin`] rather
     /// than directly. It takes ownership of the value and stores it in the
@@ -196,7 +196,7 @@ impl<'b, T: ?Sized> OPin<'b, T> {
     pub fn new<'a>(own: Own<'a, T>, slot: DropSlot<'a, 'b, T>) -> Self {
         let inner = own.inner;
         let drop_flag = slot.0.assign(own);
-        OPin { drop_flag, inner }
+        POwn { drop_flag, inner }
     }
 
     /// Gets a shared reference to the pinned value.
@@ -246,7 +246,7 @@ impl<'b, T: ?Sized> OPin<'b, T> {
     /// Gets a [`Pin<&mut T>`] to the pinned value from the nested
     /// `Pin`-pointer.
     ///
-    /// This method is useful when you have a `Pin<&mut OPin<T>>` and need to
+    /// This method is useful when you have a `Pin<&mut POwn<T>>` and need to
     /// work with the pinned value directly. It unwraps the outer pin layer
     /// and provides access to the inner pinned mutable reference.
     ///
@@ -303,12 +303,12 @@ impl<'b, T: ?Sized> OPin<'b, T> {
     ///
     /// ```rust
     /// use placid::{place, Own};
-    /// use placid::pin::OPin;
+    /// use placid::pin::POwn;
     ///
     /// let owned = place!(String::from("hello"));
     /// let drop_slot = placid::drop_slot!();
     /// let pinned = Own::into_pin(owned, drop_slot);
-    /// let uninit = OPin::drop(pinned);
+    /// let uninit = POwn::drop(pinned);
     /// // The String has been dropped, and we can re-initialize the place
     /// ```
     pub fn drop(this: Self) -> Uninit<'b, T> {
@@ -319,7 +319,7 @@ impl<'b, T: ?Sized> OPin<'b, T> {
 
     /// Converts the pinned owned reference into its unpinned variant.
     ///
-    /// This method consumes the `OPin` and returns a regular `Own` reference.
+    /// This method consumes the `POwn` and returns a regular `Own` reference.
     /// The method requires that `T: Unpin`, because unpinning an `!Unpin` type
     /// would violate pinning guarantees.
     ///
@@ -327,12 +327,12 @@ impl<'b, T: ?Sized> OPin<'b, T> {
     ///
     /// ```rust
     /// use placid::{place, Own};
-    /// use placid::pin::OPin;
+    /// use placid::pin::POwn;
     ///
     /// let owned = place!(42i32); // i32 is Unpin
     /// let drop_slot = placid::drop_slot!();
     /// let pinned = Own::into_pin(owned, drop_slot);
-    /// let unpinned = OPin::into_inner(pinned);
+    /// let unpinned = POwn::into_inner(pinned);
     /// assert_eq!(*unpinned, 42);
     /// ```
     pub fn into_inner(this: Self) -> Own<'b, T>
@@ -346,7 +346,7 @@ impl<'b, T: ?Sized> OPin<'b, T> {
     }
 }
 
-impl<'b, T: ?Sized> Deref for OPin<'b, T> {
+impl<'b, T: ?Sized> Deref for POwn<'b, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -354,19 +354,19 @@ impl<'b, T: ?Sized> Deref for OPin<'b, T> {
     }
 }
 
-impl<'b, T: ?Sized + Unpin> DerefMut for OPin<'b, T> {
+impl<'b, T: ?Sized + Unpin> DerefMut for POwn<'b, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.inner.as_mut() }
     }
 }
 
-impl<'b, T: ?Sized + fmt::Debug> fmt::Debug for OPin<'b, T> {
+impl<'b, T: ?Sized + fmt::Debug> fmt::Debug for POwn<'b, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<'b, T: ?Sized + fmt::Display> fmt::Display for OPin<'b, T> {
+impl<'b, T: ?Sized + fmt::Display> fmt::Display for POwn<'b, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&**self, f)
     }

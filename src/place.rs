@@ -12,7 +12,7 @@ use core::{
 
 use crate::{
     init::{Init, InitPin},
-    pin::{DropSlot, OPin},
+    pin::{DropSlot, POwn},
     sealed,
 };
 
@@ -164,7 +164,7 @@ impl<T> Place<T> {
         &'a mut self,
         init: I,
         slot: DropSlot<'a, 'b, T>,
-    ) -> OPin<'b, T>
+    ) -> POwn<'b, T>
     where
         I: InitPin<T, Marker, Error: fmt::Debug>,
     {
@@ -376,8 +376,8 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// let pinned = placid::Own::into_pin(owned, drop_slot);
     /// // The value is now pinned and cannot be moved
     /// ```
-    pub fn into_pin<'b>(this: Self, slot: DropSlot<'a, 'b, T>) -> OPin<'b, T> {
-        OPin::new(this, slot)
+    pub fn into_pin<'b>(this: Self, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T> {
+        POwn::new(this, slot)
     }
 
     /// Returns a raw pointer to the value inside the owned reference.
@@ -803,10 +803,10 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     ///     assert_eq!(&*pinned, "Pinned value");
     /// }
     /// ```
-    pub unsafe fn assume_init_pin<'b>(self, slot: DropSlot<'a, 'b, T>) -> OPin<'b, T> {
+    pub unsafe fn assume_init_pin<'b>(self, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T> {
         let inner = self.inner;
         mem::forget(self);
-        OPin::new(unsafe { Own::from_inner(inner) }, slot)
+        POwn::new(unsafe { Own::from_inner(inner) }, slot)
     }
 
     /// Initializes the reference with the given initializer and returns the
@@ -876,7 +876,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// // The value is now pinned and initialized
     /// assert_eq!(&*pinned, "Pinned value");
     /// ```
-    pub fn write_pin<'b, I, Marker>(self, init: I, slot: DropSlot<'a, 'b, T>) -> OPin<'b, T>
+    pub fn write_pin<'b, I, Marker>(self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
         I: InitPin<T, Marker, Error: fmt::Debug>,
     {
@@ -904,7 +904,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
         self,
         init: I,
         slot: DropSlot<'a, 'b, T>,
-    ) -> Result<OPin<'b, T>, crate::init::Error<'a, T, I::Error>>
+    ) -> Result<POwn<'b, T>, crate::init::Error<'a, T, I::Error>>
     where
         I: InitPin<T, Marker>,
     {

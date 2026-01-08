@@ -2,7 +2,7 @@ use core::{convert::Infallible, fmt};
 
 use crate::{
     Own, Uninit,
-    pin::{DropSlot, OPin},
+    pin::{DropSlot, POwn},
 };
 
 /// An error that occurs during initialization of a place.
@@ -36,7 +36,7 @@ pub trait InitPin<T: ?Sized, Marker = ()> {
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
-    ) -> Result<OPin<'b, T>, Error<'a, T, Self::Error>>;
+    ) -> Result<POwn<'b, T>, Error<'a, T, Self::Error>>;
 }
 
 /// A trait for initializing a place with a value.
@@ -56,7 +56,7 @@ impl<T> InitPin<T, FromValue> for T {
         self,
         mut place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
-    ) -> Result<OPin<'b, T>, Error<'a, T, Self::Error>> {
+    ) -> Result<POwn<'b, T>, Error<'a, T, Self::Error>> {
         (*place).write(self);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init_pin(slot) })
@@ -78,7 +78,7 @@ where
     F: for<'a, 'b> FnOnce(
         Uninit<'a, T>,
         DropSlot<'a, 'b, T>,
-    ) -> Result<OPin<'b, T>, Error<'a, T, E>>,
+    ) -> Result<POwn<'b, T>, Error<'a, T, E>>,
 {
     type Error = E;
 
@@ -86,7 +86,7 @@ where
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
-    ) -> Result<OPin<'b, T>, Error<'a, T, Self::Error>> {
+    ) -> Result<POwn<'b, T>, Error<'a, T, Self::Error>> {
         self(place, slot)
     }
 }
@@ -95,7 +95,7 @@ pub enum FromRawPin {}
 
 impl<T: ?Sized, F> InitPin<T, FromRawPin> for F
 where
-    F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> OPin<'b, T>,
+    F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
 {
     type Error = Infallible;
 
@@ -103,7 +103,7 @@ where
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
-    ) -> Result<OPin<'b, T>, Error<'a, T, Self::Error>> {
+    ) -> Result<POwn<'b, T>, Error<'a, T, Self::Error>> {
         Ok(self(place, slot))
     }
 }
@@ -120,7 +120,7 @@ where
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
-    ) -> Result<OPin<'b, T>, Error<'a, T, Self::Error>> {
+    ) -> Result<POwn<'b, T>, Error<'a, T, Self::Error>> {
         self(place).map(|own| Own::into_pin(own, slot))
     }
 }
@@ -146,7 +146,7 @@ where
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
-    ) -> Result<OPin<'b, T>, Error<'a, T, Self::Error>> {
+    ) -> Result<POwn<'b, T>, Error<'a, T, Self::Error>> {
         Ok(Own::into_pin(self(place), slot))
     }
 }
@@ -172,7 +172,7 @@ where
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
-    ) -> Result<OPin<'b, T>, Error<'a, T, Self::Error>> {
+    ) -> Result<POwn<'b, T>, Error<'a, T, Self::Error>> {
         match self() {
             Ok(value) => Ok(place.write_pin(value, slot)),
             Err(e) => Err(Error { error: e, place }),
@@ -204,7 +204,7 @@ where
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
-    ) -> Result<OPin<'b, T>, Error<'a, T, Self::Error>> {
+    ) -> Result<POwn<'b, T>, Error<'a, T, Self::Error>> {
         place.try_write_pin(self(), slot)
     }
 }
@@ -269,7 +269,7 @@ where
         self,
         place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
-    ) -> Result<OPin<'b, [T]>, Error<'a, [T], Self::Error>> {
+    ) -> Result<POwn<'b, [T]>, Error<'a, [T], Self::Error>> {
         self.init_slice(place).map(|own| Own::into_pin(own, slot))
     }
 }
@@ -292,7 +292,7 @@ impl<T: Clone> InitPin<[T], FromSliceElement<T>> for FromSliceElement<T> {
         self,
         mut place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
-    ) -> Result<OPin<'b, [T]>, Error<'a, [T], Self::Error>> {
+    ) -> Result<POwn<'b, [T]>, Error<'a, [T], Self::Error>> {
         place.write_filled(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init_pin(slot) })
@@ -319,7 +319,7 @@ where
         self,
         mut place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
-    ) -> Result<OPin<'b, [T]>, Error<'a, [T], Self::Error>> {
+    ) -> Result<POwn<'b, [T]>, Error<'a, [T], Self::Error>> {
         place.write_with(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init_pin(slot) })

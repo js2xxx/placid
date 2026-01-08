@@ -25,7 +25,7 @@ pub mod place;
 pub use self::place::{Own, Place, Uninit};
 
 pub mod pin;
-pub use self::pin::OPin;
+pub use self::pin::POwn;
 
 pub mod init;
 pub use self::init::{Init, InitPin};
