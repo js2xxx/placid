@@ -11,7 +11,7 @@ use core::{
 };
 
 use crate::{
-    init::{Init, InitPin},
+    init::{Init, InitPin, InitPinResult, InitResult, IntoInit},
     pin::{DropSlot, POwn},
     sealed,
 };
@@ -134,7 +134,7 @@ impl<T> Place<T> {
     /// ```
     pub fn write<I, Marker>(&mut self, init: I) -> Own<'_, T>
     where
-        I: Init<T, Marker, Error: fmt::Debug>,
+        I: IntoInit<T, Marker, Init: Init, Error: fmt::Debug>,
     {
         self.uninit().write(init)
     }
@@ -166,7 +166,7 @@ impl<T> Place<T> {
         slot: DropSlot<'a, 'b, T>,
     ) -> POwn<'b, T>
     where
-        I: InitPin<T, Marker, Error: fmt::Debug>,
+        I: IntoInit<T, Marker, Init: Init, Error: fmt::Debug>,
     {
         self.uninit().write_pin(init, slot)
     }
@@ -827,7 +827,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// ```
     pub fn write<I, Marker>(self, init: I) -> Own<'a, T>
     where
-        I: Init<T, Marker, Error: fmt::Debug>,
+        I: IntoInit<T, Marker, Init: Init, Error: fmt::Debug>,
     {
         self.try_write(init).unwrap()
     }
@@ -848,14 +848,11 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// let result: Result<placid::Own<i32>, _> = uninit.try_write(42);
     /// assert!(result.is_ok());
     /// ```
-    pub fn try_write<I, Marker>(
-        self,
-        init: I,
-    ) -> Result<Own<'a, T>, crate::init::Error<'a, T, I::Error>>
+    pub fn try_write<I, Marker>(self, init: I) -> InitResult<'a, I::Init>
     where
-        I: Init<T, Marker>,
+        I: IntoInit<T, Marker, Init: Init>,
     {
-        init.init(self)
+        init.into_init().init(self)
     }
 
     /// Initializes the reference with the given initializer and returns the
@@ -878,7 +875,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// ```
     pub fn write_pin<'b, I, Marker>(self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
-        I: InitPin<T, Marker, Error: fmt::Debug>,
+        I: IntoInit<T, Marker, Error: fmt::Debug>,
     {
         self.try_write_pin(init, slot).unwrap()
     }
@@ -904,11 +901,11 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
         self,
         init: I,
         slot: DropSlot<'a, 'b, T>,
-    ) -> Result<POwn<'b, T>, crate::init::Error<'a, T, I::Error>>
+    ) -> InitPinResult<'a, 'b, I::Init>
     where
-        I: InitPin<T, Marker>,
+        I: IntoInit<T, Marker>,
     {
-        init.init_pin(self, slot)
+        init.into_init().init_pin(self, slot)
     }
 }
 

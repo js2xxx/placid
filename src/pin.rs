@@ -77,6 +77,12 @@ impl<'a, T: ?Sized> Drop for DroppingSlot<'a, T> {
 /// automatically handles the lifetime and safety requirements.
 pub struct DropSlot<'a, 'b, T: ?Sized>(&'b mut DroppingSlot<'a, T>);
 
+impl<'a, 'b, T: ?Sized> fmt::Debug for DropSlot<'a, 'b, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("DropSlot").finish()
+    }
+}
+
 impl<'a, 'b, T: ?Sized> DropSlot<'a, 'b, T> {
     /// Creates a new `DropSlot` from an existing reference.
     ///
