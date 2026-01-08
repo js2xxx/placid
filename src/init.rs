@@ -94,8 +94,7 @@ pub trait InitPin: Sized {
     /// use core::pin::Pin;
     ///
     /// let owned: POwn<Vec<_>> = place!(@pin
-    ///     value(vec![1, 2, 3])
-    ///         .and_pin(|mut v: Pin<&mut Vec<_>>| v.as_mut().push(4))
+    ///     value(vec![1, 2, 3]).and_pin(|mut v| v.as_mut().push(4))
     /// );
     /// assert_eq!(*owned, [1, 2, 3, 4]);
     /// ```
@@ -271,6 +270,8 @@ impl<I: InitPin> IntoInit<I::Target> for I {
         self
     }
 }
+
+// Factory functions & adapters
 
 mod and;
 pub use self::and::{And, AndPin, and, and_pin};

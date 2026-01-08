@@ -160,6 +160,8 @@ macro_rules! drop_slot {
 /// let mut pinned = Own::into_pin(owned, drop_slot);
 /// // The value is now pinned and cannot be moved
 /// assert_eq!(*pinned, vec![1, 2, 3]);
+/// // Even if we forget `pinned`, the value will still
+/// // be properly dropped somewhere in `drop_slot`.
 /// ```
 pub struct POwn<'b, T: ?Sized> {
     drop_flag: &'b Cell<bool>,

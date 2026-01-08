@@ -101,7 +101,7 @@ impl<I: InitPin, F: FnOnce(Pin<&mut I::Target>)> InitPin for AndPin<I, F> {
 ///
 /// let owned: POwn<Vec<_>> = place!(@pin and_pin(
 ///     vec![1, 2, 3],
-///     |mut v: Pin<&mut Vec<_>>| v.as_mut().push(4),
+///     |mut v| v.as_mut().push(4),
 /// ));
 /// assert_eq!(*owned, [1, 2, 3, 4]);
 /// ```
