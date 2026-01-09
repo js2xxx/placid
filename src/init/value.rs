@@ -11,11 +11,11 @@ use crate::{
 /// This initializer is created by the [`value()`] factory function.
 pub struct Value<T>(T);
 
-impl<T> InitPin for Value<T> {
+impl<'b, T> InitPin<'b> for Value<T> {
     type Target = T;
     type Error = Infallible;
 
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         mut place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -26,8 +26,8 @@ impl<T> InitPin for Value<T> {
     }
 }
 
-impl<T> Init for Value<T> {
-    fn init(self, mut place: Uninit<'_, T>) -> InitResult<'_, Self> {
+impl<'b, T> Init<'b> for Value<T> {
+    fn init(self, mut place: Uninit<'b, T>) -> InitResult<'b, Self> {
         (*place).write(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
@@ -66,7 +66,7 @@ pub const fn value<T>(value: T) -> Value<T> {
     Value(value)
 }
 
-impl<T> IntoInit<T, Value<T>> for T {
+impl<'b, T> IntoInit<'b, T, Value<T>> for T {
     type Init = Value<T>;
     type Error = Infallible;
 
@@ -80,14 +80,14 @@ impl<T> IntoInit<T, Value<T>> for T {
 /// This initializer is created by the [`try_with()`] factory function.
 pub struct TryWith<F>(F);
 
-impl<T, E, F> InitPin for TryWith<F>
+impl<'b, T, E, F> InitPin<'b> for TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
 {
     type Target = T;
     type Error = E;
 
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -99,11 +99,11 @@ where
     }
 }
 
-impl<T, F, E> Init for TryWith<F>
+impl<'b, T, F, E> Init<'b> for TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
 {
-    fn init(self, place: Uninit<'_, T>) -> InitResult<'_, Self> {
+    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, Self> {
         match (self.0)() {
             Ok(value) => Ok(place.write(value)),
             Err(e) => Err(InitError { error: e, place }),
@@ -150,7 +150,7 @@ where
     TryWith(f)
 }
 
-impl<T, E, F> IntoInit<T, TryWith<F>> for F
+impl<'b, T, E, F> IntoInit<'b, T, TryWith<F>> for F
 where
     F: FnOnce() -> Result<T, E>,
 {
@@ -167,14 +167,14 @@ where
 /// This initializer is created by the [`with()`] factory function.
 pub struct With<F>(F);
 
-impl<T, F> InitPin for With<F>
+impl<'b, T, F> InitPin<'b> for With<F>
 where
     F: FnOnce() -> T,
 {
     type Target = T;
     type Error = Infallible;
 
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -183,11 +183,11 @@ where
     }
 }
 
-impl<T, F> Init for With<F>
+impl<'b, T, F> Init<'b> for With<F>
 where
     F: FnOnce() -> T,
 {
-    fn init(self, place: Uninit<'_, T>) -> InitResult<'_, Self> {
+    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, Self> {
         place.try_write((self.0)())
     }
 }
@@ -224,7 +224,7 @@ where
     With(f)
 }
 
-impl<T, F> IntoInit<T, With<F>> for F
+impl<'b, T, F> IntoInit<'b, T, With<F>> for F
 where
     F: FnOnce() -> T,
 {

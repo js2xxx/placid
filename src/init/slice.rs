@@ -2,7 +2,7 @@ use core::convert::Infallible;
 
 use crate::{
     Own, Uninit,
-    init::{Init, InitError, InitPin, InitPinResult, IntoInit},
+    init::{Init, InitError, InitPin, InitPinResult, InitResult, IntoInit},
     pin::DropSlot,
 };
 
@@ -57,11 +57,11 @@ impl<T: Copy> SpecInitSlice<T> for &[T] {
 /// the [`IntoInit`] trait for slice types.
 pub struct Slice<'a, T>(&'a [T]);
 
-impl<T: Clone> InitPin for Slice<'_, T> {
+impl<'b, T: Clone> InitPin<'b> for Slice<'_, T> {
     type Target = [T];
     type Error = SliceError;
 
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
@@ -73,8 +73,8 @@ impl<T: Clone> InitPin for Slice<'_, T> {
     }
 }
 
-impl<T: Clone> Init for Slice<'_, T> {
-    fn init(self, place: Uninit<'_, [T]>) -> Result<Own<'_, [T]>, InitError<'_, [T], Self::Error>> {
+impl<'b, T: Clone> Init<'b> for Slice<'_, T> {
+    fn init(self, place: Uninit<'b, [T]>) -> InitResult<'b, Self> {
         self.0.init_slice(place)
     }
 }
@@ -116,7 +116,7 @@ pub const fn slice<T: Clone>(s: &[T]) -> Slice<'_, T> {
     Slice(s)
 }
 
-impl<'a, T: Clone> IntoInit<[T], Slice<'a, T>> for &'a [T] {
+impl<'a, 'b, T: Clone> IntoInit<'b, [T], Slice<'a, T>> for &'a [T] {
     type Init = Slice<'a, T>;
     type Error = SliceError;
 
@@ -130,11 +130,11 @@ impl<'a, T: Clone> IntoInit<[T], Slice<'a, T>> for &'a [T] {
 /// This initializer is created by the [`repeat()`] factory function.
 pub struct Repeat<T>(T);
 
-impl<T: Clone> InitPin for Repeat<T> {
+impl<'b, T: Clone> InitPin<'b> for Repeat<T> {
     type Target = [T];
     type Error = Infallible;
 
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         mut place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
@@ -145,11 +145,8 @@ impl<T: Clone> InitPin for Repeat<T> {
     }
 }
 
-impl<T: Clone> Init for Repeat<T> {
-    fn init(
-        self,
-        mut place: Uninit<'_, [T]>,
-    ) -> Result<Own<'_, [T]>, InitError<'_, [T], Self::Error>> {
+impl<'b, T: Clone> Init<'b> for Repeat<T> {
+    fn init(self, mut place: Uninit<'b, [T]>) -> InitResult<'b, Self> {
         place.write_filled(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
@@ -180,14 +177,14 @@ pub const fn repeat<T: Clone>(value: T) -> Repeat<T> {
 /// This initializer is created by the [`repeat_with()`] factory function.
 pub struct RepeatWith<F>(F);
 
-impl<T, F> InitPin for RepeatWith<F>
+impl<'b, T, F> InitPin<'b> for RepeatWith<F>
 where
     F: Fn(usize) -> T,
 {
     type Target = [T];
     type Error = Infallible;
 
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         mut place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
@@ -198,14 +195,11 @@ where
     }
 }
 
-impl<T, F> Init for RepeatWith<F>
+impl<'b, T, F> Init<'b> for RepeatWith<F>
 where
     F: Fn(usize) -> T,
 {
-    fn init(
-        self,
-        mut place: Uninit<'_, [T]>,
-    ) -> Result<Own<'_, [T]>, InitError<'_, [T], Self::Error>> {
+    fn init(self, mut place: Uninit<'b, [T]>) -> InitResult<'b, Self> {
         place.write_with(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })

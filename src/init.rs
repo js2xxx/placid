@@ -44,15 +44,15 @@ impl<'a, 'b, T: ?Sized, E: fmt::Debug> fmt::Debug for InitPinError<'a, 'b, T, E>
 }
 
 pub type InitPinResult<'a, 'b, I> = Result<
-    POwn<'b, <I as InitPin>::Target>,
-    InitPinError<'a, 'b, <I as InitPin>::Target, <I as InitPin>::Error>,
+    POwn<'b, <I as InitPin<'b>>::Target>,
+    InitPinError<'a, 'b, <I as InitPin<'b>>::Target, <I as InitPin<'b>>::Error>,
 >;
 
 /// A trait for initializing a place with a pinned value.
 ///
 /// This trait is used to abstract over the different ways a place can be
 /// initialized. See the implementors for more details.
-pub trait InitPin: Sized {
+pub trait InitPin<'b>: Sized {
     type Target: ?Sized;
     type Error;
 
@@ -74,7 +74,7 @@ pub trait InitPin: Sized {
     /// containing the error and the failed place.
     ///
     /// [pinned owned reference]: crate::pin::POwn
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         place: Uninit<'a, Self::Target>,
         slot: DropSlot<'a, 'b, Self::Target>,
@@ -122,7 +122,7 @@ pub trait InitPin: Sized {
     /// ```
     fn or<M, I2>(self, other: I2) -> Or<Self, I2, M>
     where
-        I2: IntoInit<Self::Target, M, Error: Into<Self::Error>>,
+        I2: IntoInit<'b, Self::Target, M, Error: Into<Self::Error>>,
     {
         or(self, other)
     }
@@ -147,7 +147,7 @@ pub trait InitPin: Sized {
     fn or_else<F, I2>(self, f: F) -> OrElse<Self, F>
     where
         F: FnOnce(Self::Error) -> I2,
-        I2: InitPin<Target = Self::Target, Error: Into<Self::Error>>,
+        I2: InitPin<'b, Target = Self::Target, Error: Into<Self::Error>>,
     {
         or_else(self, f)
     }
@@ -205,15 +205,15 @@ impl<'a, T: ?Sized, E: fmt::Debug> fmt::Debug for InitError<'a, T, E> {
 }
 
 pub type InitResult<'a, I> = Result<
-    Own<'a, <I as InitPin>::Target>,
-    InitError<'a, <I as InitPin>::Target, <I as InitPin>::Error>,
+    Own<'a, <I as InitPin<'a>>::Target>,
+    InitError<'a, <I as InitPin<'a>>::Target, <I as InitPin<'a>>::Error>,
 >;
 
 /// A trait for initializing a place with a value.
 ///
 /// This trait is used to abstract over the different ways a place can be
 /// initialized. See the implementors for more details.
-pub trait Init: InitPin {
+pub trait Init<'b>: InitPin<'b> {
     /// Initializes a place with a value.
     ///
     /// This method performs the actual initialization of an uninitialized
@@ -230,7 +230,7 @@ pub trait Init: InitPin {
     /// containing the error and the failed place.
     ///
     /// [owned reference]: crate::Own
-    fn init(self, place: Uninit<'_, Self::Target>) -> InitResult<'_, Self>;
+    fn init(self, place: Uninit<'b, Self::Target>) -> InitResult<'b, Self>;
 
     /// Chains a closure to execute after successful initialization.
     ///
@@ -246,7 +246,10 @@ pub trait Init: InitPin {
     /// let owned: Own<Vec<_>> = own!(value(vec![1, 2, 3]).and(|v| v.push(4)));
     /// assert_eq!(*owned, vec![1, 2, 3, 4]);
     /// ```
-    fn and<F: FnOnce(&mut Self::Target)>(self, f: F) -> And<Self, F> {
+    fn and<F: FnOnce(&mut Self::Target)>(self, f: F) -> And<Self, F>
+    where
+        Self::Target: Unpin,
+    {
         and(self, f)
     }
 }
@@ -255,14 +258,14 @@ pub trait Init: InitPin {
 ///
 /// This trait is used to allow types to be directly used as initializers
 /// without needing to wrap them in a specific initializer factory function.
-pub trait IntoInit<T: ?Sized, Marker = ()>: Sized {
-    type Init: InitPin<Target = T, Error = Self::Error>;
+pub trait IntoInit<'b, T: ?Sized, Marker = ()>: Sized {
+    type Init: InitPin<'b, Target = T, Error = Self::Error>;
     type Error;
 
     fn into_init(self) -> Self::Init;
 }
 
-impl<I: InitPin> IntoInit<I::Target> for I {
+impl<'b, I: InitPin<'b>> IntoInit<'b, I::Target> for I {
     type Init = I;
     type Error = I::Error;
 

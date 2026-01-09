@@ -14,9 +14,9 @@ type PhantomResult<T, E> = PhantomData<(fn() -> T, fn() -> E)>;
 /// This initializer is created from [`try_raw_pin()`] factory function.
 pub struct TryRawPin<F, T: ?Sized, E>(F, PhantomResult<T, E>);
 
-impl<T: ?Sized, F, E> InitPin for TryRawPin<F, T, E>
+impl<'b, T: ?Sized + 'b, F, E> InitPin<'b> for TryRawPin<F, T, E>
 where
-    F: for<'a, 'b> FnOnce(
+    F: for<'a> FnOnce(
         Uninit<'a, T>,
         DropSlot<'a, 'b, T>,
     ) -> Result<POwn<'b, T>, InitPinError<'a, 'b, T, E>>,
@@ -24,7 +24,7 @@ where
     type Target = T;
     type Error = E;
 
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -47,9 +47,9 @@ where
 /// [`with`]: crate::init::with
 /// [`and`]: fn@crate::init::and
 /// [`or`]: fn@crate::init::or
-pub const fn try_raw_pin<T: ?Sized, E, F>(f: F) -> TryRawPin<F, T, E>
+pub const fn try_raw_pin<'b, T: ?Sized + 'b, E, F>(f: F) -> TryRawPin<F, T, E>
 where
-    F: for<'a, 'b> FnOnce(
+    F: for<'a> FnOnce(
         Uninit<'a, T>,
         DropSlot<'a, 'b, T>,
     ) -> Result<POwn<'b, T>, InitError<'a, T, E>>,
@@ -57,9 +57,9 @@ where
     TryRawPin(f, PhantomData)
 }
 
-impl<T: ?Sized, F, E> IntoInit<T, TryRawPin<F, T, E>> for F
+impl<'b, T: ?Sized + 'b, F, E> IntoInit<'b, T, TryRawPin<F, T, E>> for F
 where
-    F: for<'a, 'b> FnOnce(
+    F: for<'a> FnOnce(
         Uninit<'a, T>,
         DropSlot<'a, 'b, T>,
     ) -> Result<POwn<'b, T>, InitPinError<'a, 'b, T, E>>,
@@ -77,14 +77,14 @@ where
 /// This initializer is created from [`try_raw()`] factory function.
 pub struct TryRaw<F, T: ?Sized, E>(F, PhantomResult<T, E>);
 
-impl<T: ?Sized, F, E> InitPin for TryRaw<F, T, E>
+impl<'b, T: ?Sized, F, E> InitPin<'b> for TryRaw<F, T, E>
 where
     F: FnOnce(Uninit<'_, T>) -> Result<Own<'_, T>, InitError<'_, T, E>>,
 {
     type Target = T;
     type Error = E;
 
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -96,11 +96,11 @@ where
     }
 }
 
-impl<T: ?Sized, F, E> Init for TryRaw<F, T, E>
+impl<'b, T: ?Sized, F, E> Init<'b> for TryRaw<F, T, E>
 where
     F: FnOnce(Uninit<'_, T>) -> Result<Own<'_, T>, InitError<'_, T, E>>,
 {
-    fn init(self, place: Uninit<'_, T>) -> InitResult<'_, Self> {
+    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, Self> {
         (self.0)(place)
     }
 }
@@ -126,7 +126,7 @@ where
     TryRaw(f, PhantomData)
 }
 
-impl<T: ?Sized, F, E> IntoInit<T, TryRaw<F, T, E>> for F
+impl<'b, T: ?Sized, F, E> IntoInit<'b, T, TryRaw<F, T, E>> for F
 where
     F: FnOnce(Uninit<'_, T>) -> Result<Own<'_, T>, InitError<'_, T, E>>,
 {
@@ -144,14 +144,14 @@ where
 /// This initializer is created from [`raw_pin()`] factory function.
 pub struct RawPin<F, T: ?Sized>(F, PhantomData<fn() -> T>);
 
-impl<T: ?Sized, F> InitPin for RawPin<F, T>
+impl<'b, T: ?Sized, F> InitPin<'b> for RawPin<F, T>
 where
-    F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
+    F: for<'a> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
 {
     type Target = T;
     type Error = Infallible;
 
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -168,16 +168,16 @@ where
 ///
 /// This is primarily useful for implementing custom initializers that combine
 /// the flexibility of raw access with pinned semantics.
-pub const fn raw_pin<T: ?Sized, F>(f: F) -> RawPin<F, T>
+pub const fn raw_pin<'b, T: ?Sized, F>(f: F) -> RawPin<F, T>
 where
-    F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
+    F: for<'a> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
 {
     RawPin(f, PhantomData)
 }
 
-impl<T: ?Sized, F> IntoInit<T, RawPin<F, T>> for F
+impl<'b, T: ?Sized, F> IntoInit<'b, T, RawPin<F, T>> for F
 where
-    F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
+    F: for<'a> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
 {
     type Init = RawPin<F, T>;
     type Error = Infallible;
@@ -192,14 +192,14 @@ where
 /// This initializer is created from [`raw()`] factory function.
 pub struct Raw<F, T: ?Sized>(F, PhantomData<fn() -> T>);
 
-impl<T: ?Sized, F> InitPin for Raw<F, T>
+impl<'b, T: ?Sized, F> InitPin<'b> for Raw<F, T>
 where
     F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
 {
     type Target = T;
     type Error = Infallible;
 
-    fn init_pin<'a, 'b>(
+    fn init_pin<'a>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -208,7 +208,7 @@ where
     }
 }
 
-impl<T: ?Sized, F> Init for Raw<F, T>
+impl<'b, T: ?Sized, F> Init<'b> for Raw<F, T>
 where
     F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
 {
@@ -231,7 +231,7 @@ where
     Raw(f, PhantomData)
 }
 
-impl<T: ?Sized, F> IntoInit<T, Raw<F, T>> for F
+impl<'b, T: ?Sized, F> IntoInit<'b, T, Raw<F, T>> for F
 where
     F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
 {

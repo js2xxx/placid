@@ -25,7 +25,7 @@ use crate::{
 ///
 /// Users may find it easier to work with the [`own!`], [`uninit!`], and
 /// [`pown!`] macros instead of using `Place` directly.
-/// 
+///
 /// [`own!`]: crate::own
 /// [`uninit!`]: crate::uninit
 /// [`pown!`]: crate::pown
@@ -136,9 +136,9 @@ impl<T> Place<T> {
     /// let owned = place.write(String::from("World"));
     /// assert_eq!(&**owned, "World");
     /// ```
-    pub fn write<I, Marker>(&mut self, init: I) -> Own<'_, T>
+    pub fn write<'a, I, Marker>(&'a mut self, init: I) -> Own<'a, T>
     where
-        I: IntoInit<T, Marker, Init: Init, Error: fmt::Debug>,
+        I: IntoInit<'a, T, Marker, Init: Init<'a>, Error: fmt::Debug>,
     {
         self.uninit().write(init)
     }
@@ -170,7 +170,7 @@ impl<T> Place<T> {
         slot: DropSlot<'a, 'b, T>,
     ) -> POwn<'b, T>
     where
-        I: IntoInit<T, Marker, Error: fmt::Debug>,
+        I: IntoInit<'b, T, Marker, Error: fmt::Debug>,
     {
         self.uninit().write_pin(init, slot)
     }
@@ -820,7 +820,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// ```
     pub fn write<I, Marker>(self, init: I) -> Own<'a, T>
     where
-        I: IntoInit<T, Marker, Init: Init, Error: fmt::Debug>,
+        I: IntoInit<'a, T, Marker, Init: Init<'a>, Error: fmt::Debug>,
     {
         self.try_write(init).unwrap()
     }
@@ -841,7 +841,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// ```
     pub fn try_write<I, Marker>(self, init: I) -> InitResult<'a, I::Init>
     where
-        I: IntoInit<T, Marker, Init: Init>,
+        I: IntoInit<'a, T, Marker, Init: Init<'a>>,
     {
         init.into_init().init(self)
     }
@@ -864,7 +864,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// ```
     pub fn write_pin<'b, I, Marker>(self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
-        I: IntoInit<T, Marker, Error: fmt::Debug>,
+        I: IntoInit<'b, T, Marker, Error: fmt::Debug>,
     {
         self.try_write_pin(init, slot).unwrap()
     }
@@ -890,7 +890,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
         slot: DropSlot<'a, 'b, T>,
     ) -> InitPinResult<'a, 'b, I::Init>
     where
-        I: IntoInit<T, Marker>,
+        I: IntoInit<'b, T, Marker>,
     {
         init.into_init().init_pin(self, slot)
     }
