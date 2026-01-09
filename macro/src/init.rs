@@ -172,7 +172,7 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
 
         let slot_assign = pinned.then(|| {
             quote_spanned! { mixed_site =>
-                slot: self.slot,
+                slot: unsafe { core::ptr::read(&this.slot) },
             }
         });
 
@@ -200,9 +200,14 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
                 #(#ty_generics,)*
                 #typestate_ty
             > #where_clause {
+                unsafe fn drop_initialized(&mut self) {
+                    let base = self.uninit.as_mut_ptr();
+                    #drop_impl
+                }
+
                 #[inline]
                 fn __err<#error_ident>(
-                    mut self,
+                    self,
                     err: #error_ident,
                 ) -> ::placid::init::#init_error<
                     #this_lifetime,
@@ -210,13 +215,30 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
                     #ident<#(#ty_generics),*>,
                     #error_ident,
                 > {
-                    let base = self.uninit.as_mut_ptr();
-                    #drop_impl
+                    let mut this = ::core::mem::ManuallyDrop::new(self);
+                    unsafe { this.drop_initialized() };
                     ::placid::init::#init_error {
                         error: err,
-                        place: self.uninit,
+                        place: unsafe { core::ptr::read(&this.uninit) },
                         #slot_assign
                     }
+                }
+            }
+
+            #[automatically_derived]
+            impl<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#generics,)*
+                #typestate_impl
+            > Drop for #builder_ident<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#ty_generics,)*
+                #typestate_ty
+            > #where_clause {
+                fn drop(&mut self) {
+                    unsafe { self.drop_initialized() };
                 }
             }
         }
@@ -294,12 +316,6 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
             }
         };
 
-        let slot_assign = pinned.then(|| {
-            quote_spanned! { mixed_site =>
-                slot: self.slot,
-            }
-        });
-
         let func = quote_spanned! { mixed_site =>
             #vis fn #fn_name<
                 #arg_ident,
@@ -346,9 +362,21 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
                 match #init_call {
                     Ok(own) => {
                         ::core::mem::forget(own);
-                        Ok(#builder_ident {
-                            uninit: self.uninit,
-                            #slot_assign
+                        Ok(unsafe {
+                            ::core::mem::transmute::<
+                                #builder_ident<
+                                    #this_lifetime,
+                                    #(#pin_lifetime_q,)*
+                                    #(#ty_generics,)*
+                                    #typestate_ty_pre
+                                >,
+                                #builder_ident<
+                                    #this_lifetime,
+                                    #(#pin_lifetime_q,)*
+                                    #(#ty_generics,)*
+                                    #typestate_ty_post
+                                >,
+                            >(self)
                         })
                     }
                     Err(err) => Err(self.__err(err.error)),
@@ -408,9 +436,16 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
         };
 
         let assume_init = if pinned {
-            quote_spanned! { mixed_site => self.uninit.assume_init_pin(self.slot) }
+            quote_spanned! { mixed_site =>
+                let uninit = core::ptr::read(&this.uninit);
+                let slot = core::ptr::read(&this.slot);
+                uninit.assume_init_pin(slot)
+            }
         } else {
-            quote_spanned! { mixed_site => self.uninit.assume_init() }
+            quote_spanned! { mixed_site =>
+                let uninit = core::ptr::read(&this.uninit);
+                uninit.assume_init()
+            }
         };
 
         let slot_arg = pin_lifetime.as_ref().map(|pin_lifetime| {
@@ -440,6 +475,7 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
                 #typestate_ty_post
             > #where_clause {
                 pub fn build(self) -> #result_ty {
+                    let mut this = ::core::mem::ManuallyDrop::new(self);
                     // SAFETY: All fields have been initialized.
                     unsafe { #assume_init }
                 }
