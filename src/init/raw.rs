@@ -12,6 +12,7 @@ type PhantomResult<T, E> = PhantomData<(fn() -> T, fn() -> E)>;
 /// place.
 ///
 /// This initializer is created from [`try_raw_pin()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TryRawPin<F, T: ?Sized, E>(F, PhantomResult<T, E>);
 
 impl<'b, T: ?Sized + 'b, F, E> InitPin<'b> for TryRawPin<F, T, E>
@@ -75,6 +76,7 @@ where
 /// Initializes a place with a closure that has full control.
 ///
 /// This initializer is created from [`try_raw()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TryRaw<F, T: ?Sized, E>(F, PhantomResult<T, E>);
 
 impl<'b, T: ?Sized, F, E> InitPin<'b> for TryRaw<F, T, E>
@@ -142,6 +144,7 @@ where
 /// initialization.
 ///
 /// This initializer is created from [`raw_pin()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RawPin<F, T: ?Sized>(F, PhantomData<fn() -> T>);
 
 impl<'b, T: ?Sized, F> InitPin<'b> for RawPin<F, T>
@@ -190,6 +193,7 @@ where
 /// Initializes a place with a closure that has full control and cannot fail.
 ///
 /// This initializer is created from [`raw()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Raw<F, T: ?Sized>(F, PhantomData<fn() -> T>);
 
 impl<'b, T: ?Sized, F> InitPin<'b> for Raw<F, T>

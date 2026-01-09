@@ -3,7 +3,9 @@ use core::{
     alloc::Allocator,
     fmt,
     marker::{CoercePointee, PhantomData},
-    mem::{self, MaybeUninit},
+    mem::{self, ManuallyDrop, MaybeUninit},
+    ops::Deref,
+    pin::Pin,
     ptr::{self, NonNull},
 };
 
@@ -115,7 +117,290 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     {
         Uninit::from_mut(self).write_pin(init, slot)
     }
+
+    /// Initializes the place with the given initializer and returns the same
+    /// place with an initialized state.
+    ///
+    /// This method is similar to [`Uninit::write`], but instead of returning an
+    /// owned reference, it returns the place itself with an initialized state.
+    ///
+    /// If type inference fails, use [`Placed::init`] instead.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::Place;
+    ///
+    /// let p = Box::<i32>::new_uninit().init(|| 42);
+    /// assert_eq!(*p, 42);
+    /// ```
+    fn init<M, I, E>(self, init: I) -> Self::Init
+    where
+        I: for<'b> IntoInit<'b, T, M, Init: Init<'b>, Error = E>,
+        E: fmt::Debug,
+    {
+        self.try_init(init).map_err(|(e, _)| e).unwrap()
+    }
+
+    /// Tries to initialize the place with the given initializer and returns
+    /// the same place with an initialized state.
+    ///
+    /// This method is similar to [`Uninit::try_write`], but instead of
+    /// returning an owned reference, it returns the place itself with an
+    /// initialized state.
+    ///
+    /// If type inference fails, use [`Placed::try_init`] instead.
+    ///
+    /// # Errors
+    ///
+    /// If the initialization fails, this method returns a tuple containing the
+    /// error and the original place.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::Place;
+    ///
+    /// let p = Box::<i32>::new_uninit();
+    /// let result = p.try_init(|| Ok::<_, &str>(42));
+    /// assert!(result.is_ok());
+    /// assert_eq!(*result.unwrap(), 42);
+    ///
+    /// // With a failing initializer
+    /// let p = Box::<i32>::new_uninit();
+    /// let result = p.try_init(|| Err::<i32, &str>("failed"));
+    /// assert!(result.is_err());
+    /// ```
+    fn try_init<M, I, E>(mut self, init: I) -> Result<Self::Init, (E, Self)>
+    where
+        I: for<'b> IntoInit<'b, T, M, Init: Init<'b>, Error = E>,
+    {
+        'ok: {
+            let err = match Uninit::from_mut(&mut self).try_write(init) {
+                Ok(own) => {
+                    mem::forget(own);
+                    break 'ok;
+                }
+                Err(err) => err.error,
+            };
+            return Err((err, self));
+        }
+        // SAFETY: The place is now initialized, and `own` is forgotten so that the
+        // destructor is not run.
+        Ok(unsafe { self.assume_init() })
+    }
+
+    /// Initializes the place with the given initializer and returns the same
+    /// place with a pinned initialized state.
+    ///
+    /// This method is similar to [`Uninit::write_pin`], but instead of
+    /// returning a pinned owned reference, it returns the place itself with
+    /// a pinned initialized state.
+    ///
+    /// If type inference fails, use [`Placed::init_pin`] instead.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::Place;
+    ///
+    /// let place = Box::<i32>::new_uninit().init_pin(|| 42);
+    /// assert_eq!(*place, 42);
+    /// ```
+    fn init_pin<M, I, E>(self, init: I) -> Pin<Self::Init>
+    where
+        I: for<'b> IntoInit<'b, T, M, Error = E>,
+        Self::Init: Deref,
+        E: fmt::Debug,
+    {
+        self.try_init_pin(init).map_err(|(e, _)| e).unwrap()
+    }
+
+    /// Tries to initialize the place with the given initializer and returns the
+    /// same place with a pinned initialized state.
+    ///
+    /// This method is similar to [`Uninit::try_write_pin`], but instead of
+    /// returning a pinned owned reference, it returns the place itself with a
+    /// pinned initialized state.
+    ///
+    /// If type inference fails, use [`Placed::try_init_pin`] instead.
+    ///
+    /// # Errors
+    ///
+    /// If the initialization fails, this method returns a tuple containing
+    /// the error and the original place.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::Place;
+    ///
+    /// let place = Box::<i32>::new_uninit();
+    /// let result = place.try_init_pin(|| Ok::<_, &str>(42));
+    /// assert!(result.is_ok());
+    /// assert_eq!(*result.unwrap(), 42);
+    ///
+    /// let place = Box::<i32>::new_uninit();
+    /// let result = place.try_init_pin(|| Err::<i32, &str>("failed"));
+    /// assert!(result.is_err());
+    /// ```
+    fn try_init_pin<M, I, E>(mut self, init: I) -> Result<Pin<Self::Init>, (E, Self)>
+    where
+        I: for<'b> IntoInit<'b, T, M, Error = E>,
+        Self::Init: Deref,
+    {
+        'ok: {
+            let mut slot = ManuallyDrop::new(crate::pin::DroppingSlot::new());
+            // SAFETY: We actually forget `slot` since the lifetime of the object returns
+            // back to the place itself instead of `POwn`.
+            let sr = unsafe { crate::pin::DropSlot::new_unchecked(&mut slot) };
+            let err = match Uninit::from_mut(&mut self).try_write_pin(init, sr) {
+                Ok(own) => {
+                    mem::forget(own);
+                    break 'ok;
+                }
+                Err(err) => err.error,
+            };
+            return Err((err, self));
+        }
+        // SAFETY: The place is now initialized and logically pinned, and `own` & `slot`
+        // are forgotten so that the destructor is not run.
+        Ok(unsafe { Pin::new_unchecked(self.assume_init()) })
+    }
 }
+
+/// A trait for types that can be initialized in a place.
+///
+/// This trait provides convenience methods for initializing places directly
+/// without needing to wrap them in `Uninit` first. Moreover, due to the limit
+/// of the Rust trait solver, this trait reduces some redundant type
+/// annotations.
+pub trait Placed {
+    /// Initializes a place with the given initializer and returns the same
+    /// place with an initialized value of this type.
+    ///
+    /// See [`Place::init`] for more details.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::Placed;
+    ///
+    /// let b = i32::init(Box::new_uninit(), 42);
+    /// assert_eq!(*b, 42);
+    /// ```
+    fn init<P, M, I, E>(place: P, init: I) -> P::Init
+    where
+        P: Place<Self>,
+        I: for<'b> IntoInit<'b, Self, M, Init: Init<'b>, Error = E>,
+        E: fmt::Debug,
+    {
+        place.init(init)
+    }
+
+    /// Tries to initialize a place with the given initializer and returns the
+    /// same place with an initialized value of this type.
+    ///
+    /// See [`Place::try_init`] for more details.
+    ///
+    /// # Errors
+    ///
+    /// If the initialization fails, this method returns a tuple containing the
+    /// error and the original place.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::Placed;
+    ///
+    /// let b = i32::try_init(Box::new_uninit(), || Ok::<_, &str>(42));
+    /// assert!(b.is_ok());
+    /// assert_eq!(*b.unwrap(), 42);
+    ///
+    /// // With a failing initializer
+    /// let b = i32::try_init(Box::new_uninit(), || Err::<i32, &str>("failed"));
+    /// assert!(b.is_err());
+    /// ```
+    fn try_init<P, M, I, E>(place: P, init: I) -> Result<P::Init, (E, P)>
+    where
+        P: Place<Self>,
+        I: for<'b> IntoInit<'b, Self, M, Init: Init<'b>, Error = E>,
+    {
+        place.try_init(init)
+    }
+
+    /// Initializes a place with the given initializer and returns returns the
+    /// same place with a pinned initialized value of this type.
+    ///
+    /// See [`Place::init_pin`] for more details.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::Placed;
+    ///
+    /// let b = i32::init_pin(Box::new_uninit(), || 42);
+    /// assert_eq!(*b, 42);
+    /// ```
+    fn init_pin<P, M, I, E>(place: P, init: I) -> Pin<P::Init>
+    where
+        P: Place<Self>,
+        I: for<'b> IntoInit<'b, Self, M, Error = E>,
+        P::Init: Deref,
+        E: fmt::Debug,
+    {
+        place.init_pin(init)
+    }
+
+    /// Tries to initialize a place with the given initializer and returns the
+    /// same place with a pinned initialized value of this type.
+    ///
+    /// See [`Place::try_init_pin`] for more details.
+    ///
+    /// # Errors
+    ///
+    /// If the initialization fails, this method returns a tuple containing
+    /// the error and the original place.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::Placed;
+    ///
+    /// let b = i32::try_init_pin(Box::new_uninit(), || Ok::<_, &str>(42));
+    /// assert!(b.is_ok());
+    /// assert_eq!(*b.unwrap(), 42);
+    ///
+    /// // With a failing initializer
+    /// let b = i32::try_init_pin(Box::new_uninit(), || Err::<i32, &str>("failed"));
+    /// assert!(b.is_err());
+    /// ```
+    fn try_init_pin<P, M, I, E>(place: P, init: I) -> Result<Pin<P::Init>, (E, P)>
+    where
+        P: Place<Self>,
+        I: for<'b> IntoInit<'b, Self, M, Error = E>,
+        P::Init: Deref,
+    {
+        place.try_init_pin(init)
+    }
+}
+impl<T: ?Sized> Placed for T {}
 
 unsafe impl<T> Place<T> for MaybeUninit<T> {
     type Init = T;
@@ -344,5 +629,19 @@ unsafe impl<'a, #[may_dangle] T: ?Sized, S: PlaceState> Drop for PlaceRef<'a, T,
         // SAFETY: We are dropping the place, so we need to drop the value if it is
         // initialized.
         unsafe { S::drop::<T>(self.inner.as_ptr()) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn places() {
+        let b = str::init_pin(Box::new_uninit_slice(5), "hello");
+        assert_eq!(&*b, "hello");
+
+        let (e, _) = str::try_init(Box::new_uninit_slice(7), "world").unwrap_err();
+        assert_eq!(e, crate::init::SliceError);
     }
 }

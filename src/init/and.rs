@@ -12,6 +12,7 @@ use crate::{
 /// the [`and()`] factory function. It's chainable with other initializers.
 ///
 /// [`Init`]: crate::init::Init
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct And<I, F> {
     init: I,
     f: F,
@@ -64,6 +65,7 @@ where
 /// This initializer is created by calling the [`InitPin::and_pin`] method, or
 /// by using the [`and_pin()`] factory function. It's chainable with other
 /// initializers.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AndPin<I, F> {
     init: I,
     f: F,

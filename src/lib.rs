@@ -18,7 +18,7 @@
 extern crate alloc;
 
 pub mod place;
-pub use self::place::Place;
+pub use self::place::{Place, Placed};
 
 pub mod owned;
 pub mod pin;

@@ -13,7 +13,7 @@ use crate::{
 ///
 /// This structure is returned from slice initializers when the source and
 /// target slices have mismatched lengths.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Clone, Copy, PartialEq)]
 #[error("slice initialization error")]
 pub struct SliceError;
 
@@ -58,6 +58,7 @@ impl<T: Copy> SpecInitSlice<T> for &[T] {
 ///
 /// This initializer is created by the [`slice()`] factory function or through
 /// the [`IntoInit`] trait for slice types.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Slice<'a, T>(&'a [T]);
 
 impl<'b, T: Clone> InitPin<'b> for Slice<'_, T> {
@@ -131,7 +132,7 @@ impl<'a, 'b, T: Clone> IntoInit<'b, [T], Slice<'a, T>> for &'a [T] {
 /// Initializes a `str` slice by copying from a source string slice.
 ///
 /// This initializer is created by the [`str()`] factory function.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Str<'a>(&'a str);
 
 impl<'b> InitPin<'b> for Str<'_> {
@@ -191,7 +192,7 @@ pub const fn str(s: &str) -> Str<'_> {
     Str(s)
 }
 
-impl<'a, 'b> IntoInit<'a, str, Str<'a>> for &'b str {
+impl<'a, 'b> IntoInit<'a, str, Str<'b>> for &'b str {
     type Init = Str<'b>;
     type Error = SliceError;
 
@@ -203,6 +204,7 @@ impl<'a, 'b> IntoInit<'a, str, Str<'a>> for &'b str {
 /// Initializes all elements of a slice with a single repeated value.
 ///
 /// This initializer is created by the [`repeat()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Repeat<T>(T);
 
 impl<'b, T: Clone> InitPin<'b> for Repeat<T> {
@@ -250,6 +252,7 @@ pub const fn repeat<T: Clone>(value: T) -> Repeat<T> {
 /// Initializes a slice by calling a closure for each element.
 ///
 /// This initializer is created by the [`repeat_with()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RepeatWith<F>(F);
 
 impl<'b, T, F> InitPin<'b> for RepeatWith<F>

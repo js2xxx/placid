@@ -9,6 +9,7 @@ use crate::{
 /// Initializes a place with a directly-provided value.
 ///
 /// This initializer is created by the [`value()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Value<T>(T);
 
 impl<'b, T> InitPin<'b> for Value<T> {
@@ -78,6 +79,7 @@ impl<'b, T> IntoInit<'b, T, Value<T>> for T {
 /// Initializes a place by calling a closure that returns a Result.
 ///
 /// This initializer is created by the [`try_with()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TryWith<F>(F);
 
 impl<'b, T, E, F> InitPin<'b> for TryWith<F>
@@ -165,6 +167,7 @@ where
 /// Initializes a place by calling a closure that returns a value.
 ///
 /// This initializer is created by the [`with()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct With<F>(F);
 
 impl<'b, T, F> InitPin<'b> for With<F>

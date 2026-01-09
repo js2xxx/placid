@@ -62,6 +62,34 @@ pub type InitPinResult<'a, 'b, I> = Result<
 ///
 /// This trait is used to abstract over the different ways a place can be
 /// initialized. See the implementors for more details.
+///
+/// # Safety
+///
+/// This trait is itself safe to implement. However, care must be taken when
+/// implementing the `init_pin` method to ensure the pinning guarantees if
+/// hand-written unsafe code is involved.
+///
+/// An important aspect worth noting is that the `init_pin` method **cannot
+/// leave a partially-pin-initialized state** in the provided `place` even if
+/// initialization fails. This is crucial to maintain the safety guarantees of
+/// the pinning abstraction.
+///
+/// For example, when pin-initializing a struct:
+///
+/// ```ignore
+/// #[pin]
+/// struct A {
+///     #[pin]
+///     b: B,
+///     c: C,
+/// }
+/// ```
+///
+/// If the initialization of field `b` succeeds before the initialization of
+/// field `c` fails, **`b` must be dropped before returning the error or
+/// resuming the panic**. On the other hand, if the initialization of `b` fails
+/// after `c` is initialized, no cleanup is necessary since `c` is not pinned
+/// and can be safely `mem::forget`ed.
 pub trait InitPin<'b>: Sized {
     type Target: ?Sized;
     type Error;
@@ -226,6 +254,13 @@ pub type InitResult<'a, I> = Result<
 ///
 /// This trait is used to abstract over the different ways a place can be
 /// initialized. See the implementors for more details.
+///
+/// # Safety
+///
+/// Unlike [the pinning variant](crate::init::InitPin), this trait does not have
+/// the same restrictions regarding partially-initialized states. This is
+/// because the values initialized through this trait are not pinned, and thus
+/// do not have the same safety guarantees that pinned values require.
 pub trait Init<'b>: InitPin<'b> {
     /// Initializes a place with a value.
     ///

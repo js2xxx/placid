@@ -10,6 +10,7 @@ use crate::{
 ///
 /// This initializer is created by calling the [`InitPin::or`] method or by
 /// using the [`or()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Or<I1, I2, M> {
     init1: I1,
     init2: I2,
@@ -82,6 +83,7 @@ where
 ///
 /// This initializer is created by calling the [`InitPin::or_else`] method or by
 /// using the [`or_else()`] factory function.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrElse<I, F> {
     init1: I,
     f: F,
