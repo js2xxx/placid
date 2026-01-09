@@ -22,10 +22,12 @@
 extern crate alloc;
 
 pub mod place;
-pub use self::place::{Own, Place, Uninit};
+pub use self::place::Place;
 
+pub mod owned;
 pub mod pin;
-pub use self::pin::POwn;
+pub mod uninit;
+pub use self::{owned::Own, pin::POwn, uninit::Uninit};
 
 pub mod init;
 pub use self::init::{Init, InitPin};

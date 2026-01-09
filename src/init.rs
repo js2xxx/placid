@@ -1,3 +1,10 @@
+//! Traits and types for initializing places.
+//!
+//! This module defines the [`Init`] and [`InitPin`] traits, which provide
+//! abstractions for initializing uninitialized memory places. It also includes
+//! various initializers and combinators for building complex initialization
+//! patterns.
+
 use core::{fmt, pin::Pin};
 
 use crate::{
@@ -43,6 +50,9 @@ impl<'a, 'b, T: ?Sized, E: fmt::Debug> fmt::Debug for InitPinError<'a, 'b, T, E>
     }
 }
 
+/// The result type for [pinned initialization].
+///
+/// [pinned initialization]: crate::init::InitPin::init_pin
 pub type InitPinResult<'a, 'b, I> = Result<
     POwn<'b, <I as InitPin<'b>>::Target>,
     InitPinError<'a, 'b, <I as InitPin<'b>>::Target, <I as InitPin<'b>>::Error>,
@@ -204,6 +214,9 @@ impl<'a, T: ?Sized, E: fmt::Debug> fmt::Debug for InitError<'a, T, E> {
     }
 }
 
+/// The result type for [initialization].
+///
+/// [initialization]: crate::init::Init::init
 pub type InitResult<'a, I> = Result<
     Own<'a, <I as InitPin<'a>>::Target>,
     InitError<'a, <I as InitPin<'a>>::Target, <I as InitPin<'a>>::Error>,

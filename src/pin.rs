@@ -18,7 +18,7 @@ use crate::{Own, Uninit};
 ///
 /// This struct is typically created implicitly through the [`drop_slot!`]
 /// macro, which is the recommended way to create and manage drop slots.
-/// 
+///
 /// [`drop_slot!`]: macro@crate::drop_slot
 pub struct DroppingSlot<'a, T: ?Sized> {
     drop_flag: Cell<bool>,
@@ -77,7 +77,7 @@ impl<'a, T: ?Sized> Drop for DroppingSlot<'a, T> {
 ///
 /// This type is typically created through the [`drop_slot!`] macro, which
 /// automatically handles the lifetime and safety requirements.
-/// 
+///
 /// [`drop_slot!`]: macro@crate::drop_slot
 pub struct DropSlot<'a, 'b, T: ?Sized>(&'b mut DroppingSlot<'a, T>);
 
@@ -196,10 +196,10 @@ impl<'b, T: ?Sized> Drop for POwn<'b, T> {
 #[allow_internal_unstable(super_let)]
 macro_rules! pown {
     ($e:expr) => {{
-        super let mut place = $crate::Place::UNINIT;
+        super let mut place = ::core::mem::MaybeUninit::uninit();
         super let mut slot = $crate::pin::DroppingSlot::new();
         let drop_slot = unsafe { $crate::pin::DropSlot::new_unchecked(&mut slot) };
-        place.write_pin($e, drop_slot)
+        $crate::Place::write_pin(&mut place, $e, drop_slot)
     }};
 }
 
