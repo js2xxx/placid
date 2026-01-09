@@ -90,10 +90,10 @@ pub trait InitPin: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, POwn, init::*};
+    /// use placid::{pown, POwn, init::*};
     /// use core::pin::Pin;
     ///
-    /// let owned: POwn<Vec<_>> = place!(@pin
+    /// let owned: POwn<Vec<_>> = pown!(
     ///     value(vec![1, 2, 3]).and_pin(|mut v| v.as_mut().push(4))
     /// );
     /// assert_eq!(*owned, [1, 2, 3, 4]);
@@ -112,12 +112,12 @@ pub trait InitPin: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, Own, init::*};
+    /// use placid::{own, Own, init::*};
     ///
-    /// let owned: Own<u32> = place!(value(10u32).or(20u32));
+    /// let owned: Own<u32> = own!(value(10u32).or(20u32));
     /// assert_eq!(*owned, 10);
     ///
-    /// let failed: Own<u32> = place!(try_with(|| u32::try_from(-1i32)).or(30u32));
+    /// let failed: Own<u32> = own!(try_with(|| u32::try_from(-1i32)).or(30u32));
     /// assert_eq!(*failed, 30);
     /// ```
     fn or<M, I2>(self, other: I2) -> Or<Self, I2, M>
@@ -136,9 +136,9 @@ pub trait InitPin: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, Own, init::*};
+    /// use placid::{own, Own, init::*};
     ///
-    /// let owned: Own<u32> = place!(try_with(|| u32::try_from(-1i32)).or_else(|err| {
+    /// let owned: Own<u32> = own!(try_with(|| u32::try_from(-1i32)).or_else(|err| {
     ///     println!("Initialization failed with error: {}", err);
     ///     value(42u32)
     /// }));
@@ -241,9 +241,9 @@ pub trait Init: InitPin {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, Own, init::*};
+    /// use placid::{own, Own, init::*};
     ///
-    /// let owned: Own<Vec<_>> = place!(value(vec![1, 2, 3]).and(|v| v.push(4)));
+    /// let owned: Own<Vec<_>> = own!(value(vec![1, 2, 3]).and(|v| v.push(4)));
     /// assert_eq!(*owned, vec![1, 2, 3, 4]);
     /// ```
     fn and<F: FnOnce(&mut Self::Target)>(self, f: F) -> And<Self, F> {

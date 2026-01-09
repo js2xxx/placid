@@ -23,8 +23,12 @@ use crate::{
 /// tracked at runtime using a boolean flag. When a `Place` is dropped, it
 /// automatically drops the contained value if it is initialized.
 ///
-/// Users may find it easier to work with the [`place!`] macro instead of using
-/// `Place` directly.
+/// Users may find it easier to work with the [`own!`], [`uninit!`], and
+/// [`pown!`] macros instead of using `Place` directly.
+/// 
+/// [`own!`]: crate::own
+/// [`uninit!`]: crate::uninit
+/// [`pown!`]: crate::pown
 #[repr(transparent)]
 pub struct Place<T>(MaybeUninit<T>);
 
@@ -231,9 +235,9 @@ pub struct PlaceRef<'a, #[pointee] T: ?Sized, State: PlaceState> {
 /// # Examples
 ///
 /// ```rust
-/// use placid::{Own, place};
+/// use placid::Own;
 ///
-/// let mut my_place: Own<i32> = place!(42);
+/// let mut my_place: Own<i32> = placid::own!(42);
 /// assert_eq!(*my_place, 42);
 /// *my_place += 1;
 /// assert_eq!(*my_place, 43);
@@ -245,52 +249,11 @@ pub type Own<'a, T> = PlaceRef<'a, T, Owned>;
 /// # Examples
 ///
 /// ```rust
-/// use placid::{Uninit, place};
+/// use placid::Uninit;
 ///
-/// let my_place: Uninit<i32> = place!(@uninit);
+/// let my_place: Uninit<i32> = placid::uninit!();
 /// ```
 pub type Uninit<'a, T> = PlaceRef<'a, T, Uninitialized>;
-
-/// Creates a new place initialized with the given expression.
-///
-/// The expression is evaluated and stored on the current call stack. The macro
-/// then creates a `PlaceRef` pointing to that storage. This means the created
-/// place is only valid within the scope it was created in.
-///
-/// # Examples
-///
-/// ```rust
-/// let my_uninit_place: placid::Uninit<u32> = placid::place!(@uninit);
-/// let my_typed_uninit_place = placid::place!(@uninit u64);
-///
-/// let my_place = placid::place!(10);
-/// assert_eq!(*my_place, 10);
-///
-/// let my_pinned_place = placid::place!(@pin String::from("Hello"));
-/// assert_eq!(*my_pinned_place, "Hello");
-/// ```
-#[macro_export]
-#[allow_internal_unstable(super_let)]
-macro_rules! place {
-    (@uninit) => {{
-        super let mut place = $crate::Place::UNINIT;
-        place.uninit()
-    }};
-    (@uninit $ty:ty) => {{
-        super let mut place = $crate::Place::<$ty>::UNINIT;
-        place.uninit()
-    }};
-    ($e:expr) => {{
-        super let mut place = $crate::Place::UNINIT;
-        place.write($e)
-    }};
-    (@pin $e:expr) => {{
-        super let mut place = $crate::Place::UNINIT;
-        super let mut slot = $crate::pin::DroppingSlot::new();
-        let drop_slot = unsafe { $crate::pin::DropSlot::new_unchecked(&mut slot) };
-        place.write_pin($e, drop_slot)
-    }};
-}
 
 // General PlaceRef implementations
 
@@ -320,6 +283,27 @@ unsafe impl<'a, #[may_dangle] T: ?Sized, S: PlaceState> Drop for PlaceRef<'a, T,
 }
 
 // Owned PlaceRef implementations
+
+/// Creates a new place initialized with the given expression.
+///
+/// The expression is evaluated and stored on the current call stack. The macro
+/// then creates a `PlaceRef` pointing to that storage. This means the created
+/// place is only valid within the scope it was created in.
+///
+/// # Examples
+///
+/// ```rust
+/// let my_place = placid::own!(10);
+/// assert_eq!(*my_place, 10);
+/// ```
+#[macro_export]
+#[allow_internal_unstable(super_let)]
+macro_rules! own {
+    ($e:expr) => {{
+        super let mut place = $crate::Place::UNINIT;
+        place.write($e)
+    }};
+}
 
 impl<'a, T: ?Sized> Deref for Own<'a, T> {
     type Target = T;
@@ -369,9 +353,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
-    ///
-    /// let owned = place!(String::from("Hello"));
+    /// let owned = placid::own!(String::from("Hello"));
     /// let drop_slot = placid::drop_slot!();
     /// let pinned = placid::Own::into_pin(owned, drop_slot);
     /// // The value is now pinned and cannot be moved
@@ -387,9 +369,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
-    ///
-    /// let my_place = place!(42i32);
+    /// let my_place = placid::own!(42i32);
     /// let ptr = placid::Own::as_ptr(&my_place);
     /// assert_eq!(unsafe { *ptr }, 42);
     /// ```
@@ -404,9 +384,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
-    ///
-    /// let mut my_place = place!(42i32);
+    /// let mut my_place = placid::own!(42i32);
     /// let ptr = placid::Own::as_mut_ptr(&mut my_place);
     /// unsafe { *ptr = 100; }
     /// assert_eq!(*my_place, 100);
@@ -422,7 +400,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     ///
     /// ```rust
     /// use placid::Own;
-    /// let my_place: Own<String> = placid::place!(String::from("Hello"));
+    /// let my_place: Own<String> = placid::own!(String::from("Hello"));
     /// let leaked_str: &mut String = Own::leak(my_place);
     /// leaked_str.push_str(", world!");
     /// assert_eq!(leaked_str, "Hello, world!");
@@ -448,9 +426,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
-    ///
-    /// let my_place = place!(String::from("Hello"));
+    /// let my_place = placid::own!(String::from("Hello"));
     /// let ptr = placid::Own::into_raw(my_place);
     /// unsafe {
     ///     let recovered = placid::Own::from_raw(ptr);
@@ -473,11 +449,11 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
+    /// use placid::Own;
     ///
-    /// let my_place = place!(vec![1, 2, 3]);
-    /// let ptr = placid::Own::into_raw(my_place);
-    /// let recovered: placid::Own<Vec<i32>> = unsafe { placid::Own::from_raw(ptr) };
+    /// let my_place = placid::own!(vec![1, 2, 3]);
+    /// let ptr = Own::into_raw(my_place);
+    /// let recovered: Own<Vec<i32>> = unsafe { Own::from_raw(ptr) };
     /// assert_eq!(&*recovered, &[1, 2, 3]);
     /// ```
     pub const unsafe fn from_raw(ptr: *mut T) -> Self {
@@ -495,7 +471,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// ```rust
     /// use placid::{Own, Uninit};
     ///
-    /// let my_place: Own<String> = placid::place!(String::from("Hello"));
+    /// let my_place: Own<String> = placid::own!(String::from("Hello"));
     /// let uninit_place: Uninit<String> = Own::drop(my_place);
     /// // At this point, the String has been dropped.
     /// // We can now re-initialize the place.
@@ -520,7 +496,7 @@ impl<'a, T> Own<'a, T> {
     /// ```rust
     /// use placid::{Own, Uninit};
     ///
-    /// let my_place: Own<i32> = placid::place!(100);
+    /// let my_place: Own<i32> = placid::own!(100);
     /// let (value, uninit_place): (i32, Uninit<i32>) = Own::take(my_place);
     /// assert_eq!(value, 100);
     /// // The place is now uninitialized, we can re-initialize it.
@@ -549,10 +525,10 @@ macro_rules! impl_downcast {
             /// # Examples
             ///
             /// ```rust,ignore
-            /// use placid::place;
+            /// use placid::{Own, own};
             /// use std::any::Any;
             ///
-            #[doc = concat!("let value: Own<dyn ", stringify!($($t)*), "> = place!(42i32);")]
+            #[doc = concat!("let value: Own<dyn ", stringify!($($t)*), "> = own!(42i32);")]
             /// match value.downcast::<i32>() {
             ///     Ok(owned) => assert_eq!(*owned, 42),
             ///     Err(_) => panic!("Downcast failed"),
@@ -577,10 +553,10 @@ macro_rules! impl_downcast {
             /// # Examples
             ///
             /// ```rust,ignore
-            /// use placid::place;
+            /// use placid::{Own, own};
             /// use std::any::Any;
             ///
-            #[doc = concat!("let value: Own<dyn ", stringify!($($t)*), "> = place!(\"hello\");")]
+            #[doc = concat!("let value: Own<dyn ", stringify!($($t)*), "> = own!(\"hello\");")]
             /// let downcast: Own<&str> = unsafe { value.downcast_unchecked() };
             /// ```
             pub unsafe fn downcast_unchecked<U: $($t)*>(self) -> Own<'a, U> {
@@ -683,6 +659,30 @@ mod fn_impl;
 
 // Uninitialized PlaceRef implementations
 
+/// Creates a new uninitialized place on the stack.
+///
+/// The macro returns an [`Uninit`] reference that can later be written to. A
+/// typed variant is available by passing a type parameter.
+///
+/// # Examples
+///
+/// ```rust
+/// let my_uninit_place: placid::Uninit<u32> = placid::uninit!();
+/// let my_typed_uninit_place = placid::uninit!(u64);
+/// ```
+#[macro_export]
+#[allow_internal_unstable(super_let)]
+macro_rules! uninit {
+    () => {{
+        super let mut place = $crate::Place::UNINIT;
+        place.uninit()
+    }};
+    ($ty:ty) => {{
+        super let mut place = $crate::Place::<$ty>::UNINIT;
+        place.uninit()
+    }};
+}
+
 impl<'a, T> Deref for Uninit<'a, T> {
     type Target = MaybeUninit<T>;
 
@@ -728,9 +728,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
-    ///
-    /// let mut uninit: placid::Uninit<i32> = place!(@uninit);
+    /// let mut uninit: placid::Uninit<i32> = placid::uninit!();
     /// let ptr = uninit.as_mut_ptr();
     /// unsafe {
     ///     std::ptr::write(ptr, 42);
@@ -755,9 +753,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
-    ///
-    /// let mut uninit: placid::Uninit<i32> = place!(@uninit i32);
+    /// let mut uninit: placid::Uninit<i32> = placid::uninit!(i32);
     /// unsafe {
     ///     std::ptr::write(uninit.as_mut_ptr(), 42);
     ///     // Now assume it's initialized and recover the owned reference
@@ -789,11 +785,10 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, drop_slot};
-    /// use placid::pin::{DropSlot, DroppingSlot};
+    /// use placid::drop_slot;
     ///
     /// // Initialize a value in place first
-    /// let mut uninit = place!(@uninit String);
+    /// let mut uninit = placid::uninit!(String);
     /// let drop_slot = drop_slot!();
     /// unsafe {
     ///     uninit.as_mut_ptr().write(String::from("Pinned value"));
@@ -819,9 +814,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
-    ///
-    /// let uninit: placid::Uninit<String> = place!(@uninit);
+    /// let uninit = placid::uninit!(String);
     /// let owned = uninit.write(String::from("Initialized!"));
     /// assert_eq!(&*owned, "Initialized!");
     /// ```
@@ -842,10 +835,8 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
-    ///
-    /// let uninit: placid::Uninit<i32> = place!(@uninit);
-    /// let result: Result<placid::Own<i32>, _> = uninit.try_write(42);
+    /// let uninit = placid::uninit!(i32);
+    /// let result = uninit.try_write(42);
     /// assert!(result.is_ok());
     /// ```
     pub fn try_write<I, Marker>(self, init: I) -> InitResult<'a, I::Init>
@@ -865,9 +856,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
-    ///
-    /// let uninit: placid::Uninit<String> = place!(@uninit);
+    /// let uninit = placid::uninit!(String);
     /// let drop_slot = placid::drop_slot!();
     /// let pinned = uninit.write_pin(String::from("Pinned value"), drop_slot);
     /// // The value is now pinned and initialized
@@ -890,9 +879,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::place;
-    ///
-    /// let uninit: placid::Uninit<Vec<i32>> = place!(@uninit);
+    /// let uninit = placid::uninit!(Vec<i32>);
     /// let drop_slot = placid::drop_slot!();
     /// let result = uninit.try_write_pin(vec![1, 2, 3], drop_slot);
     /// assert!(result.is_ok());
@@ -921,13 +908,13 @@ mod tests {
 
     #[test]
     fn test_place_macro() {
-        let my_place = place!(10);
+        let my_place = own!(10);
         assert_eq!(*my_place, 10);
     }
 
     #[test]
     fn test_own_take() {
-        let my_place = place!(100);
+        let my_place = own!(100);
         let (value, uninit_place) = Own::take(my_place);
         assert_eq!(value, 100);
         let my_place_again = uninit_place.write(200);

@@ -39,13 +39,13 @@ impl<T> Init for Value<T> {
 /// This is a convenience factory function for creating a [`Value`] initializer.
 /// The value is moved into the place and cannot fail.
 ///
-/// This is typically not needed directly, as the [`place!`] macro provides a
+/// This is typically not needed directly, as the [`own!`] macro provides a
 /// more ergonomic interface:
 ///
 /// ```rust
-/// use placid::place;
+/// use placid::own;
 ///
-/// let owned = place!(42);
+/// let owned = own!(42);
 /// assert_eq!(*owned, 42);
 /// ```
 ///
@@ -53,15 +53,15 @@ impl<T> Init for Value<T> {
 /// initializers:
 ///
 /// ```rust
-/// use placid::{place, init::{value, Init}};
+/// use placid::{uninit, Uninit, init::{value, Init}};
 ///
-/// let uninit = place!(@uninit i32);
+/// let uninit: Uninit<i32> = uninit!();
 /// let owned = uninit.write(value(100).and(|v| *v += 23));
 /// assert_eq!(*owned, 123);
 /// ```
 ///
 /// [`Value`]: crate::init::Value
-/// [`place!`]: macro@crate::place
+/// [`own!`]: macro@crate::own
 pub const fn value<T>(value: T) -> Value<T> {
     Value(value)
 }
@@ -120,9 +120,9 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use placid::{place, init::try_with};
+/// use placid::{uninit, Uninit, init::try_with};
 ///
-/// let uninit = place!(@uninit u32);
+/// let uninit: Uninit<u32> = uninit!();
 /// let result = uninit.try_write(try_with(|| {
 ///     // Some computation that might fail
 ///     if true {
@@ -135,7 +135,7 @@ where
 /// assert_eq!(*result.unwrap(), 42);
 ///
 /// // With a failing computation
-/// let uninit = place!(@uninit u32);
+/// let uninit: Uninit<u32> = uninit!();
 /// let result = uninit.try_write(try_with(|| {
 ///     Err::<u32, &str>("failed")
 /// }));
@@ -200,23 +200,23 @@ where
 ///
 /// Using the `with()` function:
 /// ```rust
-/// use placid::{place, init::with};
+/// use placid::{uninit, init::with};
 ///
-/// let uninit = place!(@uninit String);
+/// let uninit = uninit!(String);
 /// let owned = uninit.write(with(|| String::from("Lazy initialization")));
 /// assert_eq!(&*owned, "Lazy initialization");
 /// ```
 ///
-/// Using with [`place!`] macro directly:
-/// 
-/// ```rust
-/// use placid::{place, Own};
+/// Using with [`own!`] macro directly:
 ///
-/// let owned: Own<String> = place!(|| String::from("hello"));
+/// ```rust
+/// use placid::{own, Own};
+///
+/// let owned: Own<String> = own!(|| String::from("hello"));
 /// assert_eq!(&*owned, "hello");
 /// ```
 ///
-/// [`place!`]: macro@crate::place
+/// [`own!`]: macro@crate::own
 pub const fn with<T, F>(f: F) -> With<F>
 where
     F: FnOnce() -> T,

@@ -51,9 +51,9 @@ impl<I: Init, F: FnOnce(&mut I::Target)> Init for And<I, F> {
 /// # Examples
 ///
 /// ```rust
-/// use placid::{place, Own, init::*};
+/// use placid::{own, Own, init::*};
 ///
-/// let owned: Own<Vec<_>> = place!(and(vec![1, 2, 3], |v| v.push(4)));
+/// let owned: Own<Vec<_>> = own!(and(vec![1, 2, 3], |v| v.push(4)));
 /// assert_eq!(*owned, vec![1, 2, 3, 4]);
 /// ```
 pub fn and<M, I, F, T: ?Sized>(init: I, f: F) -> And<I::Init, F>
@@ -96,10 +96,10 @@ impl<I: InitPin, F: FnOnce(Pin<&mut I::Target>)> InitPin for AndPin<I, F> {
 /// # Examples
 ///
 /// ```rust
-/// use placid::{place, POwn, init::*};
+/// use placid::{pown, POwn, init::*};
 /// use core::pin::Pin;
 ///
-/// let owned: POwn<Vec<_>> = place!(@pin and_pin(
+/// let owned: POwn<Vec<_>> = pown!(and_pin(
 ///     vec![1, 2, 3],
 ///     |mut v| v.as_mut().push(4),
 /// ));

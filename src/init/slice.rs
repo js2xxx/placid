@@ -94,21 +94,21 @@ impl<T: Clone> Init for Slice<'_, T> {
 /// # Examples
 ///
 /// ```rust
-/// use placid::{place, Uninit};
+/// use placid::{uninit, Uninit};
 ///
 /// // Initialize a slice with integers
 /// let source = [1, 2, 3, 4, 5];
-/// let mut uninit: Uninit<[i32]> = place!(@uninit [i32; 5]);
+/// let mut uninit: Uninit<[i32]> = uninit!([i32; 5]);
 /// let owned = uninit.write(&source[..]);
 /// assert_eq!(&*owned, &[1, 2, 3, 4, 5]);
 /// ```
 ///
 /// Error on length mismatch:
 /// ```rust
-/// use placid::{place, Uninit};
+/// use placid::{uninit, Uninit};
 ///
 /// let source = [1, 2, 3];
-/// let mut uninit: Uninit<[i32]> = place!(@uninit [i32; 5]); // Different size
+/// let mut uninit: Uninit<[i32]> = uninit!([i32; 5]); // Different size
 /// let result = uninit.try_write(&source[..]);
 /// assert!(result.is_err()); // Fails because lengths don't match
 /// ```
@@ -165,9 +165,9 @@ impl<T: Clone> Init for Repeat<T> {
 ///
 /// Filling a slice with a repeated value:
 /// ```rust
-/// use placid::{place, Uninit, init::repeat};
+/// use placid::{uninit, Uninit, init::repeat};
 ///
-/// let place: Uninit<[i32]> = place!(@uninit [i32; 3]);
+/// let place: Uninit<[i32]> = uninit!([i32; 3]);
 /// let owned = place.write(repeat(5));
 /// assert_eq!(*owned, [5, 5, 5]);
 /// ```
@@ -222,9 +222,9 @@ where
 ///
 /// Creating a slice of indices:
 /// ```rust
-/// use placid::{place, Uninit, init::repeat_with};
+/// use placid::{uninit, Uninit, init::repeat_with};
 ///
-/// let mut uninit: Uninit<[usize]> = place!(@uninit [usize; 5]);
+/// let mut uninit: Uninit<[usize]> = uninit!([usize; 5]);
 /// let owned = uninit.write(repeat_with(|i| i * 2));
 /// assert_eq!(&*owned, &[0, 2, 4, 6, 8]);
 /// ```

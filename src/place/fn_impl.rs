@@ -51,7 +51,7 @@ mod tests {
     #[test]
     fn test_fn() {
         let t = Box::new(1);
-        let my_place: Own<dyn FnOnce(i32) -> i32> = place!(move |x| x + *t);
+        let my_place: Own<dyn FnOnce(i32) -> i32> = own!(move |x| x + *t);
         let result = my_place(41);
         assert_eq!(result, 42);
     }

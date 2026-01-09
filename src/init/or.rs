@@ -57,12 +57,12 @@ impl<I1: Init, M, I2: IntoInit<I1::Target, M, Init: Init, Error: Into<I1::Error>
 /// # Examples
 ///
 /// ```rust
-/// use placid::{place, Own, init::*};
+/// use placid::{own, Own, init::*};
 ///
-/// let owned: Own<u32> = place!(or(value(10u32), value(20u32)));
+/// let owned: Own<u32> = own!(or(value(10u32), value(20u32)));
 /// assert_eq!(*owned, 10);
 ///
-/// let failed: Own<u32> = place!(or(try_with(|| u32::try_from(-1i32)), 30u32));
+/// let failed: Own<u32> = own!(or(try_with(|| u32::try_from(-1i32)), 30u32));
 /// assert_eq!(*failed, 30);
 /// ```
 pub fn or<I1, I2, M2>(init1: I1, init2: I2) -> Or<I1, I2, M2>
@@ -131,9 +131,9 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use placid::{place, Own, init::*};
+/// use placid::{own, Own, init::*};
 ///
-/// let owned: Own<u32> = place!(or_else(try_with(|| u32::try_from(-1i32)), |err| {
+/// let owned: Own<u32> = own!(or_else(try_with(|| u32::try_from(-1i32)), |err| {
 ///     println!("Initialization failed with error: {}", err);
 ///     value(42u32)
 /// }));

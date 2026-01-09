@@ -18,6 +18,8 @@ use crate::{Own, Uninit};
 ///
 /// This struct is typically created implicitly through the [`drop_slot!`]
 /// macro, which is the recommended way to create and manage drop slots.
+/// 
+/// [`drop_slot!`]: macro@crate::drop_slot
 pub struct DroppingSlot<'a, T: ?Sized> {
     drop_flag: Cell<bool>,
     inner: MaybeUninit<Own<'a, T>>,
@@ -75,6 +77,8 @@ impl<'a, T: ?Sized> Drop for DroppingSlot<'a, T> {
 ///
 /// This type is typically created through the [`drop_slot!`] macro, which
 /// automatically handles the lifetime and safety requirements.
+/// 
+/// [`drop_slot!`]: macro@crate::drop_slot
 pub struct DropSlot<'a, 'b, T: ?Sized>(&'b mut DroppingSlot<'a, T>);
 
 impl<'a, 'b, T: ?Sized> fmt::Debug for DropSlot<'a, 'b, T> {
@@ -122,9 +126,9 @@ impl<'a, 'b, T: ?Sized> DropSlot<'a, 'b, T> {
 /// # Examples
 ///
 /// ```rust
-/// use placid::{place, Own};
+/// use placid::{own, Own};
 ///
-/// let owned = place!(String::from("Hello"));
+/// let owned = own!(String::from("Hello"));
 /// let drop_slot = placid::drop_slot!();
 /// let pinned = Own::into_pin(owned, drop_slot);
 /// assert_eq!(&*pinned, "Hello");
@@ -153,13 +157,11 @@ macro_rules! drop_slot {
 /// # Examples
 ///
 /// ```rust
-/// use placid::{place, Own};
+/// use placid::{pown, Own};
 ///
-/// let owned = place!(vec![1, 2, 3]);
-/// let drop_slot = placid::drop_slot!();
-/// let mut pinned = Own::into_pin(owned, drop_slot);
+/// let pinned = pown!(vec![1, 2, 3]);
 /// // The value is now pinned and cannot be moved
-/// assert_eq!(*pinned, vec![1, 2, 3]);
+/// assert_eq!(*pinned, [1, 2, 3]);
 /// // Even if we forget `pinned`, the value will still
 /// // be properly dropped somewhere in `drop_slot`.
 /// ```
@@ -179,6 +181,28 @@ impl<'b, T: ?Sized> Drop for POwn<'b, T> {
     }
 }
 
+/// Creates a new pinned place initialized with the given expression.
+///
+/// This macro allocates stack storage for the value and returns a pinned owned
+/// reference to it.
+///
+/// # Examples
+///
+/// ```rust
+/// let my_pinned_place = placid::pown!(String::from("Hello"));
+/// assert_eq!(*my_pinned_place, "Hello");
+/// ```
+#[macro_export]
+#[allow_internal_unstable(super_let)]
+macro_rules! pown {
+    ($e:expr) => {{
+        super let mut place = $crate::Place::UNINIT;
+        super let mut slot = $crate::pin::DroppingSlot::new();
+        let drop_slot = unsafe { $crate::pin::DropSlot::new_unchecked(&mut slot) };
+        place.write_pin($e, drop_slot)
+    }};
+}
+
 impl<'b, T: ?Sized> POwn<'b, T> {
     /// Creates a new `POwn` from a pinned owned reference and a drop flag.
     ///
@@ -190,12 +214,10 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, Own};
-    /// use placid::pin::{DroppingSlot, DropSlot};
+    /// use placid::{own, Own};
     ///
-    /// let owned = place!(42i32);
-    /// let mut slot = DroppingSlot::new();
-    /// let drop_slot = unsafe { DropSlot::new_unchecked(&mut slot) };
+    /// let owned = own!(42i32);
+    /// let drop_slot = placid::drop_slot!();
     /// let pinned = Own::into_pin(owned, drop_slot);
     /// // Pinned value is now created
     /// ```
@@ -216,11 +238,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, Own};
-    ///
-    /// let owned = place!(String::from("pinned"));
-    /// let drop_slot = placid::drop_slot!();
-    /// let pinned = Own::into_pin(owned, drop_slot);
+    /// let pinned = placid::pown!(String::from("pinned"));
     /// let pinned_ref = pinned.as_ref();
     /// assert_eq!(&*pinned_ref, "pinned");
     /// ```
@@ -238,11 +256,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, Own};
-    ///
-    /// let owned = place!(vec![1, 2]);
-    /// let drop_slot = placid::drop_slot!();
-    /// let mut pinned = Own::into_pin(owned, drop_slot);
+    /// let mut pinned = placid::pown!(vec![1, 2]);
     /// let mut pinned_mut = pinned.as_mut();
     /// pinned_mut.push(3);
     /// ```
@@ -262,11 +276,8 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     ///
     /// ```rust
     /// use core::pin::Pin;
-    /// use placid::{place, Own};
     ///
-    /// let owned = place!(String::from("hello"));
-    /// let drop_slot = placid::drop_slot!();
-    /// let mut pinned = Own::into_pin(owned, drop_slot);
+    /// let mut pinned = placid::pown!(String::from("hello"));
     /// let pinned_mut: Pin<&mut String> = Pin::new(&mut pinned).as_deref_mut();
     /// // Now you can modify the string through the pinned reference
     /// ```
@@ -284,11 +295,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, Own};
-    ///
-    /// let owned = place!(42i32);
-    /// let drop_slot = placid::drop_slot!();
-    /// let mut pinned = Own::into_pin(owned, drop_slot);
+    /// let mut pinned = placid::pown!(42i32);
     /// pinned.set(100);
     /// assert_eq!(*pinned, 100);
     /// ```
@@ -310,12 +317,9 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, Own};
-    /// use placid::pin::POwn;
+    /// use placid::POwn;
     ///
-    /// let owned = place!(String::from("hello"));
-    /// let drop_slot = placid::drop_slot!();
-    /// let pinned = Own::into_pin(owned, drop_slot);
+    /// let mut pinned = placid::pown!(String::from("hello"));
     /// let uninit = POwn::drop(pinned);
     /// // The String has been dropped, and we can re-initialize the place
     /// ```
@@ -334,12 +338,9 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{place, Own};
-    /// use placid::pin::POwn;
+    /// use placid::POwn;
     ///
-    /// let owned = place!(42i32); // i32 is Unpin
-    /// let drop_slot = placid::drop_slot!();
-    /// let pinned = Own::into_pin(owned, drop_slot);
+    /// let mut pinned = placid::pown!(42i32); // i32 is Unpin
     /// let unpinned = POwn::into_inner(pinned);
     /// assert_eq!(*unpinned, 42);
     /// ```
