@@ -325,6 +325,8 @@ unsafe impl<'a, T: ?Sized + Send, S: PlaceState> Send for PlaceRef<'a, T, S> {}
 // SAFETY: PlaceRef is Sync if T is Sync.
 unsafe impl<'a, T: ?Sized + Sync, S: PlaceState> Sync for PlaceRef<'a, T, S> {}
 
+impl<'a, T: ?Sized, S: PlaceState> Unpin for PlaceRef<'a, T, S> {}
+
 impl<'a, T: ?Sized, S: PlaceState> PlaceRef<'a, T, S> {
     pub(crate) const unsafe fn from_inner(inner: NonNull<T>) -> Self {
         PlaceRef {

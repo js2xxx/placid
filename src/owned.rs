@@ -3,11 +3,14 @@ use core::{
     alloc::Allocator,
     any::Any,
     borrow::{Borrow, BorrowMut},
+    error::Error,
     fmt,
     hash::{Hash, Hasher},
     mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
+    pin::Pin,
     ptr::NonNull,
+    task::{Context, Poll},
 };
 
 use crate::{
@@ -358,12 +361,34 @@ impl<'a, T: ?Sized> fmt::Pointer for Own<'a, T> {
 }
 
 impl<'a, T: Clone> Own<'a, T> {
+    /// Clones the value inside the owned reference into another place.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{own, Own};
+    ///
+    /// let owned: Own<String> = own!(String::from("Hello"));
+    /// let mut another_place = core::mem::MaybeUninit::uninit();
+    /// let cloned: Own<String> = owned.clone(&mut another_place);
+    /// assert_eq!(&*cloned, "Hello");
+    /// ```
     pub fn clone<'b>(&self, to: &'b mut impl Place<T>) -> Own<'b, T> {
         to.write(|| (**self).clone())
     }
 }
 
 impl<'a, T: Default> Own<'a, T> {
+    /// Initializes the place with the default value of `T`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{own, Own};
+    ///
+    /// let mut place = core::mem::MaybeUninit::uninit();
+    /// let owned: Own<Vec<i32>> = Own::default(&mut place);
+    /// assert_eq!(&*owned, &[]);
     pub fn default(place: &'a mut impl Place<T>) -> Self {
         place.write(T::default)
     }
@@ -423,43 +448,180 @@ impl<'a, T: ?Sized + Hasher> Hasher for Own<'a, T> {
     }
 }
 
+impl<'a, T: ?Sized + Error> Error for Own<'a, T> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        (**self).source()
+    }
+}
+
+impl<'a, F: ?Sized + Future + Unpin> Future for Own<'a, F> {
+    type Output = F::Output;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut **self).poll(cx)
+    }
+}
+
+#[allow(dead_code)]
+fn into_undrop_box<T: ?Sized>(own: Own<'_, T>) -> Box<T, impl Allocator> {
+    use core::alloc::{AllocError, Allocator, Layout};
+
+    let inner = own.inner;
+    mem::forget(own);
+
+    // SAFETY: Hack to call the function, moving out the possible DST from the
+    // pointer. FIXME: Error-prone. Use a better way when available.
+    unsafe {
+        struct NullAlloc;
+
+        unsafe impl Allocator for NullAlloc {
+            fn allocate(&self, _layout: Layout) -> Result<NonNull<[u8]>, AllocError> {
+                Err(AllocError)
+            }
+
+            unsafe fn deallocate(&self, _ptr: NonNull<u8>, _layout: Layout) {
+                // No-op
+            }
+        }
+        Box::from_raw_in(inner.as_ptr(), NullAlloc)
+    }
+}
+
+impl<'a, I: ?Sized + Iterator> Iterator for Own<'a, I> {
+    type Item = I::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        (**self).next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (**self).size_hint()
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        (**self).nth(n)
+    }
+}
+
 #[cfg(feature = "fn-impl")]
 mod fn_impl;
 
 /// A trait for types that can be converted into owned places.
-pub trait IntoOwn: Deref {
+///
+/// This trait allows for "extracting" an [owned] reference from various
+/// container types that hold values. It is primarily used to facilitate the
+/// creation of owned places from standard library containers like `Box`, `Rc`,
+/// and `Arc`.
+///
+/// This trait is not meant to be used directly, as there is no such method as
+/// `IntoOwn::into_own`, since the place itself should be converted. Instead,
+/// callers of this trait can use the [`into_own!`] and [`into_pown!`] macros to
+/// conveniently convert expressions into owned references.
+///
+/// # Safety
+///
+/// Implementors must ensure that `into_own_place` correctly converts the
+/// container into a place that wraps the current contained value, i.e. the
+/// place must be initialized with the value inside the container.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::{into_own, Own, owned::IntoOwn};
+/// use core::mem::MaybeUninit;
+///
+/// fn use_owned<T: IntoOwn>(value: T) -> T::Place {
+///     let mut place: T::Place;
+///     {
+///         let owned = into_own!(place <- value);
+///         // Use the owned reference...
+///     }
+///     place
+/// }
+///
+/// let place: Box<MaybeUninit<i32>> = use_owned(Box::new(42));
+/// // The place now can be re-initialized or used further.
+/// ```
+///
+/// [owned]: crate::Own
+/// [`into_own!`]: crate::into_own!
+/// [`into_pown!`]: crate::into_pown!
+pub unsafe trait IntoOwn: Deref {
+    /// The type of place associated with this container.
     type Place: Place<Self::Target, Init = Self>;
 
-    #[doc(hidden)]
+    /// Converts the container into its associated place wrapping the contained
+    /// value.
+    ///
+    /// This method should not be used directly. Instead, use the [`into_own!`]
+    /// macro.
+    ///
+    /// [`into_own!`]: crate::into_own!
     fn into_own_place(self) -> Self::Place {
         Place::from_init(self)
     }
 }
 
-impl<T, A: Allocator> IntoOwn for Box<T, A> {
-    type Place = Box<MaybeUninit<T>, A>;
+macro_rules! impl_std_alloc {
+    (@IMP $ty:ident) => {
+        unsafe impl<T, A: Allocator> IntoOwn for $ty<T, A> {
+            type Place = $ty<MaybeUninit<T>, A>;
+        }
+
+        unsafe impl<T, A: Allocator> IntoOwn for $ty<[T], A> {
+            type Place = $ty<[MaybeUninit<T>], A>;
+        }
+
+        unsafe impl<A: Allocator> IntoOwn for $ty<str, A> {
+            type Place = $ty<[MaybeUninit<u8>], A>;
+        }
+    };
+    ($($ty:ident),*) => {
+        $(impl_std_alloc!(@IMP $ty);)*
+    };
 }
 
-impl<T, A: Allocator> IntoOwn for Box<[T], A> {
-    type Place = Box<[MaybeUninit<T>], A>;
-}
+impl_std_alloc!(Box, Arc, Rc);
 
-impl<T, A: Allocator> IntoOwn for Rc<T, A> {
-    type Place = Rc<MaybeUninit<T>, A>;
-}
-
-impl<T, A: Allocator> IntoOwn for Rc<[T], A> {
-    type Place = Rc<[MaybeUninit<T>], A>;
-}
-
-impl<T, A: Allocator> IntoOwn for Arc<T, A> {
-    type Place = Arc<MaybeUninit<T>, A>;
-}
-
-impl<T, A: Allocator> IntoOwn for Arc<[T], A> {
-    type Place = Arc<[MaybeUninit<T>], A>;
-}
-
+/// Creates an [owned reference] from a container, extracting the contained
+/// value.
+///
+/// The macro converts the given expression into an owned place by extracting
+/// the value inside the container. The resulting owned reference can be used
+/// like any other owned reference.
+///
+/// For the pinned counterpart, see the [`into_pown!`] macro.
+///
+/// # Arguments
+///
+/// * `$e:expr` - An expression that evaluates to a container implementing the
+///   `IntoOwn` trait.
+/// * `$p:ident` - (optional) An identifier to bind the resulting place to. If
+///   omitted, a temporary variable is created.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::{into_own, Own};
+/// let my_place: Own<i32> = into_own!(Box::new(55));
+/// assert_eq!(*my_place, 55);
+/// ```
+///
+/// ```rust
+/// use placid::{into_own, Own, Place};
+/// use std::rc::Rc;
+///
+/// let mut place; // Rc<MaybeUninit<String>>
+/// let owned = into_own!(place <- Rc::new(String::from("Hello")));
+/// assert_eq!(&*owned, "Hello");
+/// drop(owned);
+///
+/// let owned_again = place.write(String::from("World"));
+/// assert_eq!(&*owned_again, "World");
+/// ```
+///
+/// [owned reference]: crate::Own
+/// [`into_pown!`]: crate::into_pown!
 #[macro_export]
 #[allow_internal_unstable(super_let)]
 macro_rules! into_own {
@@ -468,8 +630,8 @@ macro_rules! into_own {
         unsafe { $crate::Own::from_mut(&mut $p) }
     }};
     ($e:expr) => {{
-        super let mut p = $crate::owned::IntoOwn::into_own_place($e);
-        unsafe { $crate::Own::from_mut(&mut p) }
+        super let mut p;
+        $crate::into_own!(p <- $e)
     }};
 }
 

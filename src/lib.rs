@@ -2,15 +2,10 @@
 #![allow(internal_features)]
 #![cfg_attr(
     feature = "fn-impl",
-    feature(
-        allocator_api,
-        tuple_trait,
-        fn_traits,
-        unboxed_closures,
-        unsized_fn_params
-    )
+    feature(tuple_trait, fn_traits, unboxed_closures, unsized_fn_params)
 )]
 #![feature(alloc_layout_extra)]
+#![feature(allocator_api)]
 #![feature(allow_internal_unstable)]
 #![feature(derive_coerce_pointee)]
 #![feature(dropck_eyepatch)]

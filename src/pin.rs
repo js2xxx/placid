@@ -1,13 +1,16 @@
 use core::{
     cell::Cell,
+    error::Error,
     fmt,
+    hash::{Hash, Hasher},
     mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
     pin::Pin,
     ptr::NonNull,
+    task::{Context, Poll},
 };
 
-use crate::{Own, Uninit};
+use crate::{Own, Place, Uninit};
 
 /// A slot that holds and manages the lifetime of a pinned owned value.
 ///
@@ -378,5 +381,202 @@ impl<'b, T: ?Sized + fmt::Debug> fmt::Debug for POwn<'b, T> {
 impl<'b, T: ?Sized + fmt::Display> fmt::Display for POwn<'b, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&**self, f)
+    }
+}
+
+impl<'a, T: ?Sized> fmt::Pointer for POwn<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Pointer::fmt(&self.inner, f)
+    }
+}
+
+impl<'a, T: Clone> POwn<'a, T> {
+    /// Clones the value inside the pinned owned reference into another place.
+    ///
+    /// This method creates a new pinned owned reference by cloning the value
+    /// from the current pinned reference into the specified place. The new
+    /// value is properly pinned in the target location.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{pown, POwn};
+    ///
+    /// let pinned = placid::pown!(String::from("hello"));
+    /// let mut place = core::mem::MaybeUninit::uninit();
+    /// let drop_slot = placid::drop_slot!();
+    /// let cloned: POwn<String> = pinned.clone(&mut place, drop_slot);
+    /// assert_eq!(&*cloned, "hello");
+    /// ```
+    pub fn clone<'p, 'b>(
+        &self,
+        to: &'p mut impl Place<T>,
+        slot: DropSlot<'p, 'b, T>,
+    ) -> POwn<'b, T> {
+        to.write_pin(|| (**self).clone(), slot)
+    }
+}
+
+impl<'b, T: Default> POwn<'b, T> {
+    /// Initializes the place with the default value of `T`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{pown, POwn};
+    ///
+    /// let mut place = core::mem::MaybeUninit::uninit();
+    /// let drop_slot = placid::drop_slot!();
+    /// let owned: POwn<Vec<i32>> = POwn::default(&mut place, drop_slot);
+    /// assert_eq!(&*owned, &[]);
+    /// ```
+    pub fn default<'a>(place: &'a mut impl Place<T>, slot: DropSlot<'a, 'b, T>) -> Self {
+        place.write_pin(T::default, slot)
+    }
+}
+
+impl<'a, 'b, T: ?Sized + PartialEq<U>, U: ?Sized> PartialEq<POwn<'b, U>> for POwn<'a, T> {
+    fn eq(&self, other: &POwn<'b, U>) -> bool {
+        **self == **other
+    }
+}
+
+impl<'a, T: ?Sized + Eq> Eq for POwn<'a, T> {}
+
+impl<'a, 'b, T: ?Sized + PartialOrd<U>, U: ?Sized> PartialOrd<POwn<'b, U>> for POwn<'a, T> {
+    fn partial_cmp(&self, other: &POwn<'b, U>) -> Option<core::cmp::Ordering> {
+        (**self).partial_cmp(&**other)
+    }
+}
+
+impl<'a, T: ?Sized + Ord> Ord for POwn<'a, T> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        (**self).cmp(&**other)
+    }
+}
+
+impl<'a, T: ?Sized + Hash> Hash for POwn<'a, T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        (**self).hash(state)
+    }
+}
+
+impl<'a, T: ?Sized + Hasher + Unpin> Hasher for POwn<'a, T> {
+    fn finish(&self) -> u64 {
+        (**self).finish()
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        (**self).write(bytes);
+    }
+}
+
+impl<'a, T: ?Sized + Error> Error for POwn<'a, T> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        (**self).source()
+    }
+}
+
+impl<'a, F: ?Sized + Future> Future for POwn<'a, F> {
+    type Output = F::Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.as_deref_mut().poll(cx)
+    }
+}
+
+/// Creates a new [pinned owned reference] initialized with the given
+/// expression.
+///
+/// The macro converts the given expression into a pinned owned place by
+/// extracting the value inside the container. The resulting pinned owned
+/// reference can be used like any other owned reference.
+///
+/// For the unpinned counterpart, see [`into_own!`].
+///
+/// # Arguments
+///
+/// * `$e:expr` - An expression that evaluates to a container implementing the
+///   [`IntoOwn`] trait.
+/// * `$p:ident` - (optional) An identifier to bind the resulting place to. If
+///   omitted, a temporary variable is created.
+/// * `$slot:ident` - (optional) An identifier to bind the drop slot to. If
+///   omitted, a temporary drop slot is created.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::into_pown;
+///
+/// let pown = into_pown!(Box::pin(100u32));
+/// assert_eq!(*pown, 100);
+/// ```
+///
+/// ```rust
+/// use placid::{into_pown, Own, POwn, Place};
+/// use std::rc::Rc;
+///
+/// let mut place;
+/// {
+///     let pown: POwn<u32> = into_pown!(place <- Rc::pin(200u32));
+///     assert_eq!(*pown, 200);
+///
+///     // `drop(pown)` alone is not enough to end the borrow of `place`,
+///     // because an implicit `DropSlot` is still holding a reference to it,
+///     // ensuring proper drop semantics if `pown` get `mem::forget`ed. Thus,
+///     // we need a brace scope here.
+/// }
+/// let reuse: Own<u32> = place.write(300u32);
+/// assert_eq!(*reuse, 300);
+/// ```
+///
+/// [pinned owned reference]: crate::POwn
+/// [`into_own!`]: crate::into_own!
+/// [`IntoOwn`]: crate::owned::IntoOwn
+#[macro_export]
+#[allow_internal_unstable(super_let)]
+macro_rules! into_pown {
+    ($p:ident, $slot:ident <- $e:expr) => {{
+        use ::core::pin::Pin;
+
+        let pinned = $e;
+        let init = unsafe { Pin::into_inner_unchecked(pinned) };
+        $p = $crate::owned::IntoOwn::into_own_place(init);
+        unsafe { $crate::Own::into_pin($crate::Own::from_mut(&mut $p), $slot) }
+    }};
+    ($p:ident <- $e:expr) => {{
+        use ::core::pin::Pin;
+
+        super let mut slot = $crate::pin::DroppingSlot::new();
+        let slot = unsafe { $crate::pin::DropSlot::new_unchecked(&mut slot) };
+
+        let pinned = $e;
+        let init = unsafe { Pin::into_inner_unchecked(pinned) };
+        $p = $crate::owned::IntoOwn::into_own_place(init);
+        unsafe { $crate::Own::into_pin($crate::Own::from_mut(&mut $p), slot) }
+    }};
+    ($e:expr) => {{
+        super let mut p;
+        $crate::into_pown!(p <- $e)
+    }};
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::boxed::Box;
+
+    use super::*;
+
+    #[test]
+    fn test_into_pown() {
+        let mut my_place;
+        {
+            let owned = into_pown!(my_place <- Box::pin(55));
+            assert_eq!(*owned, 55);
+        }
+        my_place.write(123);
+
+        let owned2 = into_pown!(Box::pin(77));
+        assert_eq!(*owned2, 77);
     }
 }
