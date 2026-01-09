@@ -217,7 +217,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     ///     assert_eq!(*uninit.assume_init(), 42);
     /// }
     /// ```
-    pub unsafe fn assume_init(self) -> Own<'a, T> {
+    pub const unsafe fn assume_init(self) -> Own<'a, T> {
         let inner = self.inner;
         mem::forget(self);
         unsafe { Own::from_inner(inner) }

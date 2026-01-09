@@ -1,0 +1,481 @@
+use proc_macro2::{Span, TokenStream};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
+use syn::{
+    Error, Fields, GenericParam, Generics, Lifetime, Member, Result, TraitBound,
+    TraitBoundModifier, TypeParamBound, parse_quote, punctuated::Punctuated,
+};
+use synstructure::Structure;
+
+fn opt_iter<T>(v: &Option<T>) -> &[T] {
+    match v {
+        Some(v) => std::slice::from_ref(v),
+        None => &[],
+    }
+}
+
+fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Error> {
+    // Extract generics and where clauses
+    let Generics {
+        params: generics, where_clause, ..
+    } = &s.ast().generics;
+    let generics: Vec<_> = generics
+        .into_iter()
+        .map(|x| {
+            let mut x = x.clone();
+            match &mut x {
+                GenericParam::Lifetime(_) => (),
+                GenericParam::Type(t) => {
+                    t.default = None;
+
+                    // Need to remove ?Sized bound.
+                    let bounds = std::mem::take(&mut t.bounds);
+                    t.bounds = bounds
+                        .into_iter()
+                        .filter(|b| {
+                            !matches!(
+                                b,
+                                TypeParamBound::Trait(TraitBound {
+                                    modifier: TraitBoundModifier::Maybe(_),
+                                    ..
+                                })
+                            )
+                        })
+                        .collect();
+                }
+                GenericParam::Const(c) => c.default = None,
+            }
+            x
+        })
+        .collect();
+
+    let ty_generics: Vec<_> = generics
+        .iter()
+        .map(|x| -> &dyn ToTokens {
+            match x {
+                GenericParam::Lifetime(l) => &l.lifetime,
+                GenericParam::Type(t) => &t.ident,
+                GenericParam::Const(c) => &c.ident,
+            }
+        })
+        .collect();
+
+    let vis = &s.ast().vis;
+    let ident = &s.ast().ident;
+
+    match &s.ast().data {
+        syn::Data::Struct(_) => {}
+        syn::Data::Enum(e) => {
+            return Err(Error::new_spanned(
+                e.enum_token,
+                "enums cannot be structurally derived",
+            ));
+        }
+        syn::Data::Union(u) => {
+            return Err(Error::new_spanned(
+                u.union_token,
+                "unions cannot be structurally derived",
+            ));
+        }
+    };
+
+    let variant = s.variants()[0].ast();
+
+    let (fields, named) = match variant.fields {
+        Fields::Named(v) => (&v.named, true),
+        Fields::Unnamed(v) => (&v.unnamed, false),
+        Fields::Unit => (&Punctuated::new(), false),
+    };
+
+    let field_name: Vec<_> = fields
+        .iter()
+        .enumerate()
+        .map(|(i, field)| match &field.ident {
+            Some(v) => Member::Named(v.clone()),
+            None => Member::Unnamed(i.into()),
+        })
+        .collect();
+
+    // Create identifier names that are unlikely to be used.
+    let typestate_name: Vec<_> = field_name
+        .iter()
+        .enumerate()
+        .map(|(f, _)| format_ident!("__C{}", f))
+        .collect();
+
+    let this_lifetime: Lifetime = parse_quote!('__this);
+    let pin_lifetime: Option<Lifetime> = pinned.then(|| parse_quote!('__pin));
+    let pin_lifetime_q = opt_iter(&pin_lifetime);
+    let init_lifetime = pin_lifetime.as_ref().unwrap_or(&this_lifetime);
+
+    let error_ident = format_ident!("__E");
+    let arg_ident = format_ident!("__A");
+    let marker_ident = format_ident!("__M");
+    let builder_ident = if pinned {
+        format_ident!("InitPin{ident}")
+    } else {
+        format_ident!("Init{ident}")
+    };
+
+    let init_error = if pinned {
+        format_ident!("InitPinError")
+    } else {
+        format_ident!("InitError")
+    };
+
+    // Hygiene for local variables.
+    let mixed_site = Span::mixed_site();
+
+    let mut builder = Vec::new();
+
+    builder.push({
+        let (typestate_impl, typestate_ty, drop_impl) = if named {
+            (
+                quote_spanned! { mixed_site => #(const #typestate_name: bool,)* },
+                quote_spanned! { mixed_site => #(#typestate_name,)* },
+                quote_spanned! { mixed_site => #(
+                    if #typestate_name {
+                        // SAFETY: Typestate ensures that we are only dropping
+                        //         initialized value.
+                        unsafe {
+                            let ptr = ::core::ptr::addr_of_mut!((*base).#field_name);
+                            ptr.drop_in_place();
+                        }
+                    }
+                )*},
+            )
+        } else {
+            (
+                quote_spanned! { mixed_site => const __C: usize, },
+                quote_spanned! { mixed_site => __C, },
+                quote_spanned! { mixed_site => #(
+                    if __C > #field_name {
+                        // SAFETY: Typestate ensures that we are only dropping
+                        //         initialized value.
+                        unsafe {
+                            let ptr = ::core::ptr::addr_of_mut!((*base).#field_name);
+                            ptr.drop_in_place();
+                        }
+                    }
+                )*},
+            )
+        };
+
+        let slot_def = pin_lifetime.as_ref().map(|pin_lifetime| {
+            quote_spanned! { mixed_site =>
+                slot: ::placid::pin::DropSlot<
+                    #this_lifetime,
+                    #pin_lifetime,
+                    #ident<#(#ty_generics),*>
+                >,
+            }
+        });
+
+        let slot_assign = pinned.then(|| {
+            quote_spanned! { mixed_site =>
+                slot: self.slot,
+            }
+        });
+
+        quote_spanned! { mixed_site =>
+            #[automatically_derived]
+            #vis struct #builder_ident<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#generics,)*
+                #typestate_impl
+            > #where_clause {
+                uninit: ::placid::Uninit<#this_lifetime, #ident<#(#ty_generics),*>>,
+                #slot_def
+            }
+
+            #[automatically_derived]
+            impl<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#generics,)*
+                #typestate_impl
+            > #builder_ident<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#ty_generics,)*
+                #typestate_ty
+            > #where_clause {
+                #[inline]
+                fn __err<#error_ident>(
+                    mut self,
+                    err: #error_ident,
+                ) -> ::placid::init::#init_error<
+                    #this_lifetime,
+                    #(#pin_lifetime_q,)*
+                    #ident<#(#ty_generics),*>,
+                    #error_ident,
+                > {
+                    let base = self.uninit.as_mut_ptr();
+                    #drop_impl
+                    ::placid::init::#init_error {
+                        error: err,
+                        place: self.uninit,
+                        #slot_assign
+                    }
+                }
+            }
+        }
+    });
+
+    for (i, field) in fields.iter().enumerate() {
+        let field_name_cur = &field_name[i];
+        let vis = &field.vis;
+        let ty = &field.ty;
+
+        let (typestate_impl, typestate_ty_pre, typestate_ty_post, fn_name) = if named {
+            let typestate_name_before = &typestate_name[0..i];
+            let typestate_name_after = &typestate_name[i + 1..];
+
+            (
+                quote_spanned! { mixed_site =>
+                    #(const #typestate_name_before: bool,)*
+                    #(const #typestate_name_after: bool,)*
+                },
+                quote_spanned! { mixed_site =>
+                    #(#typestate_name_before,)*
+                    false,
+                    #(#typestate_name_after,)*
+                },
+                quote_spanned! {mixed_site =>
+                    #(#typestate_name_before,)*
+                    true,
+                    #(#typestate_name_after,)*
+                },
+                quote_spanned! { mixed_site => #field_name_cur },
+            )
+        } else {
+            let next = i + 1;
+            (
+                quote_spanned! { mixed_site => },
+                quote_spanned! { mixed_site => #i, },
+                quote_spanned! { mixed_site => #next, },
+                quote_spanned! { mixed_site => next },
+            )
+        };
+
+        let init_bound = if pinned {
+            quote_spanned! { mixed_site => }
+        } else {
+            quote_spanned! { mixed_site => Init: ::placid::init::Init<#this_lifetime>, }
+        };
+
+        let slot_creation = pin_lifetime.as_ref().map(|pin_lifetime| {
+            quote_spanned! { mixed_site =>
+                let mut slot = ::core::mem::ManuallyDrop::new(
+                    ::placid::pin::DroppingSlot::new()
+                );
+                // SAFETY: We actually forget `slot` since the lifetime of
+                // the object returns back to the builder itself instead of `POwn`.
+                let slot_ref = unsafe {
+                    ::core::mem::transmute::<
+                        ::placid::pin::DropSlot<'_, '_, #ty>,
+                        ::placid::pin::DropSlot<
+                            #this_lifetime,
+                            #pin_lifetime,
+                            #ty,
+                        >,
+                    >(::placid::pin::DropSlot::new_unchecked(&mut slot))
+                };
+            }
+        });
+
+        let init_call = if pinned {
+            quote_spanned! { mixed_site =>
+                init.init_pin(field_place, slot_ref)
+            }
+        } else {
+            quote_spanned! { mixed_site =>
+                init.init(field_place)
+            }
+        };
+
+        let slot_assign = pinned.then(|| {
+            quote_spanned! { mixed_site =>
+                slot: self.slot,
+            }
+        });
+
+        let func = quote_spanned! { mixed_site =>
+            #vis fn #fn_name<
+                #arg_ident,
+                #error_ident,
+                #marker_ident,
+            >(
+                mut self,
+                init: #arg_ident,
+            ) -> Result<
+                #builder_ident<
+                    #this_lifetime,
+                    #(#pin_lifetime_q,)*
+                    #(#ty_generics,)*
+                    #typestate_ty_post
+                >,
+                ::placid::init::#init_error<
+                    #this_lifetime,
+                    #(#pin_lifetime_q,)*
+                    #ident<#(#ty_generics),*>,
+                    #error_ident,
+                >,
+            >
+            where
+                #arg_ident: ::placid::init::IntoInit<
+                    #init_lifetime,
+                    #ty,
+                    #marker_ident,
+                    #init_bound
+                    Error = #error_ident,
+                >,
+            {
+                use ::placid::{InitPin, Init};
+                let init = init.into_init();
+
+                #slot_creation
+
+                // SAFETY: We are initializing the field here.
+                let field_place = unsafe {
+                    let base = self.uninit.as_mut_ptr();
+                    let field_ptr = &raw mut (*base).#field_name_cur;
+                    ::placid::Uninit::from_raw(field_ptr)
+                };
+
+                match #init_call {
+                    Ok(own) => {
+                        ::core::mem::forget(own);
+                        Ok(#builder_ident {
+                            uninit: self.uninit,
+                            #slot_assign
+                        })
+                    }
+                    Err(err) => Err(self.__err(err.error)),
+                }
+            }
+        };
+
+        builder.push(quote_spanned! { mixed_site =>
+            #[automatically_derived]
+            impl<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#generics,)*
+                #typestate_impl
+            > #builder_ident<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#ty_generics,)*
+                #typestate_ty_pre
+            > #where_clause {
+                #func
+            }
+        });
+    }
+
+    builder.push({
+        let (typestate_ty_pre, typestate_ty_post) = if named {
+            let all_true: Vec<_> = field_name.iter().map(|_| quote!(true)).collect();
+            let all_false: Vec<_> = field_name.iter().map(|_| quote!(false)).collect();
+
+            (
+                quote_spanned! { mixed_site => #(#all_false,)* },
+                quote_spanned! { mixed_site => #(#all_true,)* },
+            )
+        } else {
+            let len = field_name.len();
+            (
+                quote_spanned! { mixed_site => 0, },
+                quote_spanned! { mixed_site => #len, },
+            )
+        };
+
+        let result_ty = if let Some(pin_lifetime) = &pin_lifetime {
+            quote_spanned! { mixed_site =>
+                ::placid::POwn<
+                    #pin_lifetime,
+                    #ident<#(#ty_generics),*>,
+                >
+            }
+        } else {
+            quote_spanned! { mixed_site =>
+                ::placid::Own<
+                    #this_lifetime,
+                    #ident<#(#ty_generics),*>,
+                >
+            }
+        };
+
+        let assume_init = if pinned {
+            quote_spanned! { mixed_site => self.uninit.assume_init_pin(self.slot) }
+        } else {
+            quote_spanned! { mixed_site => self.uninit.assume_init() }
+        };
+
+        let slot_arg = pin_lifetime.as_ref().map(|pin_lifetime| {
+            quote_spanned! { mixed_site =>
+                slot: ::placid::pin::DropSlot<
+                    #this_lifetime,
+                    #pin_lifetime,
+                    #ident<#(#ty_generics),*>,
+                >,
+            }
+        });
+
+        let slot_assign = pinned.then(|| {
+            quote_spanned! { mixed_site => slot }
+        });
+
+        quote_spanned! { mixed_site =>
+            #[automatically_derived]
+            impl<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#generics,)*
+            > #builder_ident<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#ty_generics,)*
+                #typestate_ty_post
+            > #where_clause {
+                pub fn build(self) -> #result_ty {
+                    // SAFETY: All fields have been initialized.
+                    unsafe { #assume_init }
+                }
+            }
+
+            #[automatically_derived]
+            impl<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#generics,)*
+            > #builder_ident<
+                #this_lifetime,
+                #(#pin_lifetime_q,)*
+                #(#ty_generics,)*
+                #typestate_ty_pre
+            > #where_clause {
+                pub const fn new(
+                    uninit: ::placid::Uninit<
+                        #this_lifetime,
+                        #ident<#(#ty_generics),*>,
+                    >,
+                    #slot_arg
+                ) -> Self {
+                    Self { uninit, #slot_assign }
+                }
+            }
+        }
+    });
+
+    Ok(quote!(#(#builder)*))
+}
+
+pub fn derive_init_pin(s: Structure) -> Result<TokenStream> {
+    derive(s, true)
+}
+
+pub fn derive_init(s: Structure) -> Result<TokenStream> {
+    derive(s, false)
+}
