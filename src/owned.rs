@@ -228,7 +228,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// let owned_place: Own<i32> = unsafe { Own::from_mut(&mut uninit_place) };
     /// assert_eq!(*owned_place, 10);
     /// ```
-    pub unsafe fn from_mut(place: &'a mut impl Place<Target = T>) -> Self {
+    pub unsafe fn from_mut(place: &'a mut impl Place<T>) -> Self {
         unsafe { Own::from_raw(place.as_mut_ptr()) }
     }
 
@@ -358,13 +358,13 @@ impl<'a, T: ?Sized> fmt::Pointer for Own<'a, T> {
 }
 
 impl<'a, T: Clone> Own<'a, T> {
-    pub fn clone<'b>(&self, to: &'b mut impl Place<Target = T>) -> Own<'b, T> {
+    pub fn clone<'b>(&self, to: &'b mut impl Place<T>) -> Own<'b, T> {
         to.write(|| (**self).clone())
     }
 }
 
 impl<'a, T: Default> Own<'a, T> {
-    pub fn default(place: &'a mut impl Place<Target = T>) -> Self {
+    pub fn default(place: &'a mut impl Place<T>) -> Self {
         place.write(T::default)
     }
 }
@@ -428,7 +428,7 @@ mod fn_impl;
 
 /// A trait for types that can be converted into owned places.
 pub trait IntoOwn: Deref {
-    type Place: Place<Target = Self::Target, Init = Self>;
+    type Place: Place<Self::Target, Init = Self>;
 
     #[doc(hidden)]
     fn into_own_place(self) -> Self::Place {

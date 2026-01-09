@@ -3,7 +3,7 @@ use core::{
     alloc::Allocator,
     fmt,
     marker::{CoercePointee, PhantomData},
-    mem::MaybeUninit,
+    mem::{self, MaybeUninit},
     ptr::{self, NonNull},
 };
 
@@ -36,23 +36,20 @@ use crate::{
 /// - The `as_mut_ptr` method must return a valid pointer to the memory location
 ///   of the place.
 /// - The `assume_init` method must return the same memory location as an
-///   initialized place containing a valid value of type `Self::Target`. The
-///   validity of the place is the caller's responsibility to uphold.
+///   initialized place containing a valid value of type `T`. The validity of
+///   the place is the caller's responsibility to uphold.
 /// - The `from_init` method must correctly wrap an initialized place containing
-///   a valid value of type `Self::Target` into `Self`, discarding the explicit
+///   a valid value of type `T` into `Self`, discarding the explicit
 ///   initialization state. However, the wrapped value must still be valid
 ///   inside the place.
 ///
 /// [place expressions]: https://doc.rust-lang.org/stable/reference/expressions.html#place-expressions-and-value-expressions
-pub unsafe trait Place: Sized {
-    /// The type of the value that this place can hold.
-    type Target: ?Sized;
-
+pub unsafe trait Place<T: ?Sized>: Sized {
     /// The type of the place, but with an explicit initialized state.
     type Init;
 
     /// Returns a mutable pointer to the memory location of the place.
-    fn as_mut_ptr(&mut self) -> *mut Self::Target;
+    fn as_mut_ptr(&mut self) -> *mut T;
 
     /// Assumes that the place is initialized and returns the initialized place.
     ///
@@ -86,9 +83,9 @@ pub unsafe trait Place: Sized {
     /// let owned = Place::write(&mut place, 42);
     /// assert_eq!(*owned, 42);
     /// ```
-    fn write<'b, M, I>(&'b mut self, init: I) -> Own<'b, Self::Target>
+    fn write<'b, M, I>(&'b mut self, init: I) -> Own<'b, T>
     where
-        I: IntoInit<'b, Self::Target, M, Init: Init<'b>, Error: fmt::Debug>,
+        I: IntoInit<'b, T, M, Init: Init<'b>, Error: fmt::Debug>,
     {
         Uninit::from_mut(self).write(init)
     }
@@ -112,24 +109,18 @@ pub unsafe trait Place: Sized {
     /// let owned = Place::write_pin(&mut place, 42, drop_slot);
     /// assert_eq!(*owned, 42);
     /// ```
-    fn write_pin<'a, 'b, M, I>(
-        &'a mut self,
-        init: I,
-        slot: DropSlot<'a, 'b, Self::Target>,
-    ) -> POwn<'b, Self::Target>
+    fn write_pin<'a, 'b, M, I>(&'a mut self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
-        I: IntoInit<'b, Self::Target, M, Error: fmt::Debug>,
+        I: IntoInit<'b, T, M, Error: fmt::Debug>,
     {
         Uninit::from_mut(self).write_pin(init, slot)
     }
 }
 
-unsafe impl<T> Place for MaybeUninit<T> {
-    type Target = T;
-
+unsafe impl<T> Place<T> for MaybeUninit<T> {
     type Init = T;
 
-    fn as_mut_ptr(&mut self) -> *mut Self::Target {
+    fn as_mut_ptr(&mut self) -> *mut T {
         self.as_mut_ptr()
     }
 
@@ -142,13 +133,35 @@ unsafe impl<T> Place for MaybeUninit<T> {
     }
 }
 
-unsafe impl<T, const N: usize> Place for [MaybeUninit<T>; N] {
-    type Target = [T; N];
+unsafe impl<const N: usize> Place<str> for MaybeUninit<[u8; N]> {
+    type Init = [u8; N];
 
+    fn as_mut_ptr(&mut self) -> *mut str {
+        let ptr = self.as_mut_ptr().cast::<u8>();
+        ptr::from_raw_parts_mut(ptr, N)
+    }
+
+    unsafe fn assume_init(self) -> Self::Init {
+        unsafe { self.assume_init() }
+    }
+
+    fn from_init(init: Self::Init) -> Self {
+        MaybeUninit::new(init)
+    }
+}
+
+unsafe impl<T, U: ?Sized, const N: usize> Place<U> for [MaybeUninit<T>; N]
+where
+    MaybeUninit<[T; N]>: Place<U>,
+{
     type Init = [T; N];
 
-    fn as_mut_ptr(&mut self) -> *mut Self::Target {
-        (self as &mut [MaybeUninit<T>]).as_mut_ptr() as *mut [T; N]
+    fn as_mut_ptr(&mut self) -> *mut U {
+        // SAFETY: [MaybeUninit<T>; N] and MaybeUninit<[T; N]> have the same memory
+        // layout and validity value ranges.
+        let r =
+            unsafe { mem::transmute::<&mut [MaybeUninit<T>; N], &mut MaybeUninit<[T; N]>>(self) };
+        Place::as_mut_ptr(r)
     }
 
     unsafe fn assume_init(self) -> Self::Init {
@@ -160,130 +173,101 @@ unsafe impl<T, const N: usize> Place for [MaybeUninit<T>; N] {
     }
 }
 
-unsafe impl<T, A: Allocator> Place for Box<MaybeUninit<T>, A> {
-    type Target = T;
+macro_rules! std_alloc_places {
+    (@get_mut $this:ident, $ty:ident) => {
+        $ty::get_mut($this).unwrap()
+    };
+    (@get_mut $this:ident, mut $ty:ident) => {
+        **$this
+    };
+    (@from_raw_parts ($($t:tt)*)) => {
+        ptr::from_raw_parts($($t)*)
+    };
+    (@from_raw_parts mut ($($t:tt)*)) => {
+        ptr::from_raw_parts_mut($($t)*)
+    };
+    (@IMP $ty:ident $($mut:ident)?) => {
+        unsafe impl<T, A: Allocator> Place<T> for $ty<MaybeUninit<T>, A> {
+            type Init = $ty<T, A>;
 
-    type Init = Box<T, A>;
+            fn as_mut_ptr(&mut self) -> *mut T {
+                std_alloc_places!(@get_mut self, $($mut)? $ty).as_mut_ptr()
+            }
 
-    fn as_mut_ptr(&mut self) -> *mut Self::Target {
-        (**self).as_mut_ptr()
-    }
+            unsafe fn assume_init(self) -> Self::Init {
+                unsafe { self.assume_init() }
+            }
 
-    unsafe fn assume_init(self) -> Self::Init {
-        unsafe { self.assume_init() }
-    }
+            fn from_init(init: Self::Init) -> Self {
+                let (raw, alloc) = $ty::into_raw_with_allocator(init);
+                unsafe { $ty::from_raw_in(raw.cast::<MaybeUninit<T>>(), alloc) }
+            }
+        }
 
-    fn from_init(init: Self::Init) -> Self {
-        let (raw, alloc) = Box::into_raw_with_allocator(init);
-        unsafe { Box::from_raw_in(raw.cast::<MaybeUninit<T>>(), alloc) }
-    }
+        unsafe impl<T, A: Allocator> Place<[T]> for $ty<[MaybeUninit<T>], A> {
+            type Init = $ty<[T], A>;
+
+            fn as_mut_ptr(&mut self) -> *mut [T] {
+                let len = self.len();
+                let ptr = std_alloc_places!(@get_mut self, $($mut)? $ty).as_mut_ptr();
+                ptr::from_raw_parts_mut(ptr.cast::<T>(), len)
+            }
+
+            unsafe fn assume_init(self) -> Self::Init {
+                unsafe { self.assume_init() }
+            }
+
+            fn from_init(init: Self::Init) -> Self {
+                let len = init.len();
+                let (raw, alloc) = $ty::into_raw_with_allocator(init);
+                let ptr = std_alloc_places!(@from_raw_parts $($mut)? (
+                    raw.cast::<MaybeUninit<T>>(),
+                    len,
+                ));
+                unsafe { $ty::from_raw_in(ptr, alloc) }
+            }
+        }
+
+        unsafe impl<A: Allocator> Place<str> for $ty<[MaybeUninit<u8>], A> {
+            type Init = $ty<str, A>;
+
+            fn as_mut_ptr(&mut self) -> *mut str {
+                let len = self.len();
+                let ptr = std_alloc_places!(@get_mut self, $($mut)? $ty).as_mut_ptr();
+                ptr::from_raw_parts_mut(ptr.cast::<u8>(), len)
+            }
+
+            unsafe fn assume_init(self) -> Self::Init {
+                unsafe {
+                    let (raw, alloc) = $ty::into_raw_with_allocator(self.assume_init());
+                    let ptr = std_alloc_places!(@from_raw_parts $($mut)? (
+                        raw.cast::<u8>(),
+                        raw.len(),
+                    ));
+                    $ty::from_raw_in(ptr, alloc)
+                }
+            }
+
+            fn from_init(init: Self::Init) -> Self {
+                let len = init.len();
+                let (raw, alloc) = $ty::into_raw_with_allocator(init);
+                let ptr = std_alloc_places!(@from_raw_parts $($mut)? (
+                    raw.cast::<MaybeUninit<u8>>(),
+                    len,
+                ));
+                unsafe { $ty::from_raw_in(ptr, alloc) }
+            }
+        }
+    };
+    ($($ty:ident $($mut:ident)?),* $(,)?) => {
+        $(std_alloc_places!(@IMP $ty $($mut)?);)*
+    };
 }
 
-unsafe impl<T, A: Allocator> Place for Box<[MaybeUninit<T>], A> {
-    type Target = [T];
-
-    type Init = Box<[T], A>;
-
-    fn as_mut_ptr(&mut self) -> *mut Self::Target {
-        let len = self.len();
-        let ptr = (**self).as_mut_ptr();
-        ptr::slice_from_raw_parts_mut(ptr.cast::<T>(), len)
-    }
-
-    unsafe fn assume_init(self) -> Self::Init {
-        unsafe { self.assume_init() }
-    }
-
-    fn from_init(init: Self::Init) -> Self {
-        let len = init.len();
-        let (raw, alloc) = Box::into_raw_with_allocator(init);
-        let ptr = ptr::slice_from_raw_parts_mut(raw.cast::<MaybeUninit<T>>(), len);
-        unsafe { Box::from_raw_in(ptr, alloc) }
-    }
-}
-
-unsafe impl<T, A: Allocator> Place for Rc<MaybeUninit<T>, A> {
-    type Target = T;
-
-    type Init = Rc<T, A>;
-
-    fn as_mut_ptr(&mut self) -> *mut Self::Target {
-        Rc::get_mut(self).unwrap().as_mut_ptr()
-    }
-
-    unsafe fn assume_init(self) -> Self::Init {
-        unsafe { self.assume_init() }
-    }
-
-    fn from_init(init: Self::Init) -> Self {
-        let (raw, alloc) = Rc::into_raw_with_allocator(init);
-        unsafe { Rc::from_raw_in(raw.cast::<MaybeUninit<T>>(), alloc) }
-    }
-}
-
-unsafe impl<T, A: Allocator> Place for Rc<[MaybeUninit<T>], A> {
-    type Target = [T];
-
-    type Init = Rc<[T], A>;
-
-    fn as_mut_ptr(&mut self) -> *mut Self::Target {
-        let len = self.len();
-        let ptr = Rc::get_mut(self).unwrap().as_mut_ptr();
-        ptr::slice_from_raw_parts_mut(ptr.cast::<T>(), len)
-    }
-
-    unsafe fn assume_init(self) -> Self::Init {
-        unsafe { self.assume_init() }
-    }
-
-    fn from_init(init: Self::Init) -> Self {
-        let len = init.len();
-        let (raw, alloc) = Rc::into_raw_with_allocator(init);
-        let ptr = ptr::slice_from_raw_parts(raw.cast::<MaybeUninit<T>>(), len);
-        unsafe { Rc::from_raw_in(ptr, alloc) }
-    }
-}
-
-unsafe impl<T, A: Allocator> Place for Arc<MaybeUninit<T>, A> {
-    type Target = T;
-
-    type Init = Arc<T, A>;
-
-    fn as_mut_ptr(&mut self) -> *mut Self::Target {
-        Arc::get_mut(self).unwrap().as_mut_ptr()
-    }
-
-    unsafe fn assume_init(self) -> Self::Init {
-        unsafe { self.assume_init() }
-    }
-
-    fn from_init(init: Self::Init) -> Self {
-        let (raw, alloc) = Arc::into_raw_with_allocator(init);
-        unsafe { Arc::from_raw_in(raw.cast::<MaybeUninit<T>>(), alloc) }
-    }
-}
-
-unsafe impl<T, A: Allocator> Place for Arc<[MaybeUninit<T>], A> {
-    type Target = [T];
-
-    type Init = Arc<[T], A>;
-
-    fn as_mut_ptr(&mut self) -> *mut Self::Target {
-        let len = self.len();
-        let ptr = Arc::get_mut(self).unwrap().as_mut_ptr();
-        ptr::slice_from_raw_parts_mut(ptr.cast::<T>(), len)
-    }
-
-    unsafe fn assume_init(self) -> Self::Init {
-        unsafe { self.assume_init() }
-    }
-
-    fn from_init(init: Self::Init) -> Self {
-        let len = init.len();
-        let (raw, alloc) = Arc::into_raw_with_allocator(init);
-        let ptr = ptr::slice_from_raw_parts(raw.cast::<MaybeUninit<T>>(), len);
-        unsafe { Arc::from_raw_in(ptr, alloc) }
-    }
+std_alloc_places! {
+    Box mut,
+    Rc,
+    Arc,
 }
 
 /// A place state marker for owned places.

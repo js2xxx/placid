@@ -86,6 +86,28 @@ impl<'a, T> DerefMut for Uninit<'a, [T]> {
     }
 }
 
+impl<'a> Deref for Uninit<'a, str> {
+    type Target = [MaybeUninit<u8>];
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: We are treating the place as uninitialized.
+        unsafe {
+            let (addr, len) = self.inner.as_ptr().to_raw_parts();
+            slice::from_raw_parts(addr.cast(), len)
+        }
+    }
+}
+
+impl<'a> DerefMut for Uninit<'a, str> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        // SAFETY: We are treating the place as uninitialized.
+        unsafe {
+            let (addr, len) = self.inner.as_ptr().to_raw_parts();
+            slice::from_raw_parts_mut(addr.cast(), len)
+        }
+    }
+}
+
 impl<'a, T: ?Sized> Uninit<'a, T> {
     /// Converts the uninitialized reference into a raw pointer, consuming the
     /// original object.
@@ -151,7 +173,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     ///     assert_eq!(*owned, 42);
     /// }
     /// ```
-    pub fn from_mut(place: &'a mut impl Place<Target = T>) -> Self {
+    pub fn from_mut(place: &'a mut impl Place<T>) -> Self {
         // SAFETY: We have a mutable reference to a place, so the memory is
         // valid for T.
         unsafe { Self::from_raw(place.as_mut_ptr()) }

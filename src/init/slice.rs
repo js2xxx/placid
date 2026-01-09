@@ -1,4 +1,7 @@
-use core::convert::Infallible;
+use core::{
+    convert::Infallible,
+    mem::{self, MaybeUninit},
+};
 
 use crate::{
     Own, Uninit,
@@ -122,6 +125,78 @@ impl<'a, 'b, T: Clone> IntoInit<'b, [T], Slice<'a, T>> for &'a [T] {
 
     fn into_init(self) -> Self::Init {
         Slice(self)
+    }
+}
+
+/// Initializes a `str` slice by copying from a source string slice.
+///
+/// This initializer is created by the [`str()`] factory function.
+#[derive(Debug, Clone, Copy)]
+pub struct Str<'a>(&'a str);
+
+impl<'b> InitPin<'b> for Str<'_> {
+    type Target = str;
+    type Error = SliceError;
+
+    fn init_pin<'a>(
+        self,
+        mut place: Uninit<'a, str>,
+        slot: DropSlot<'a, 'b, str>,
+    ) -> InitPinResult<'a, 'b, Self> {
+        if place.len() != self.0.len() {
+            return Err(InitError { error: SliceError, place }.into_pin(slot));
+        }
+
+        let src = unsafe { mem::transmute::<&[u8], &[MaybeUninit<u8>]>(self.0.as_bytes()) };
+        place.copy_from_slice(src);
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init_pin(slot) })
+    }
+}
+
+impl<'b> Init<'b> for Str<'_> {
+    fn init(self, mut place: Uninit<'b, str>) -> InitResult<'b, Self> {
+        if place.len() != self.0.len() {
+            return Err(InitError { error: SliceError, place });
+        }
+
+        let src = unsafe { mem::transmute::<&[u8], &[MaybeUninit<u8>]>(self.0.as_bytes()) };
+        place.copy_from_slice(src);
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init() })
+    }
+}
+
+/// Initializes a `str` slice by copying from a source string slice.
+///
+/// This is used to initialize a pre-allocated `str` slice by copying the
+/// contents from another string slice. The source and target slices must have
+/// the same length, or the initialization will fail with a [`SliceError`].
+///
+/// Users typically do not need to call this function directly, as `&str`
+/// implements the [`IntoInit`] trait. Use this function when combining with
+/// other initializers.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::{uninit, Uninit, init};
+///
+/// let source = "Hello, world!";
+/// let mut uninit: Uninit<str> = uninit!([u8; 13]); // Pre-allocated for 13 bytes
+/// let owned = uninit.write(init::str(source));
+/// assert_eq!(&*owned, "Hello, world!");
+/// ```
+pub const fn str(s: &str) -> Str<'_> {
+    Str(s)
+}
+
+impl<'a, 'b> IntoInit<'a, str, Str<'a>> for &'b str {
+    type Init = Str<'b>;
+    type Error = SliceError;
+
+    fn into_init(self) -> Self::Init {
+        Str(self)
     }
 }
 

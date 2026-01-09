@@ -299,7 +299,9 @@ mod raw;
 pub use self::raw::{Raw, RawPin, TryRaw, TryRawPin, raw, raw_pin, try_raw, try_raw_pin};
 
 mod slice;
-pub use self::slice::{Repeat, RepeatWith, Slice, SliceError, repeat, repeat_with, slice};
+pub use self::slice::{
+    Repeat, RepeatWith, Slice, SliceError, Str, repeat, repeat_with, slice, str,
+};
 
 mod value;
 pub use self::value::{TryWith, Value, With, try_with, value, with};

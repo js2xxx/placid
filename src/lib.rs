@@ -18,6 +18,7 @@
 #![feature(maybe_uninit_fill)]
 #![feature(min_specialization)]
 #![feature(ptr_as_uninit)]
+#![feature(ptr_metadata)]
 
 extern crate alloc;
 
