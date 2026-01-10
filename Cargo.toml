@@ -38,3 +38,7 @@ fn-impl = ["alloc"]
 placid-macro = {version = "=0.1.0", path = "macro"}
 # External crates
 thiserror = {version = "2.0", default-features = false}
+
+[dev-dependencies]
+libc = "0.2"
+pin-project = "1.1"
