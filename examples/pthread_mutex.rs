@@ -1,7 +1,6 @@
 use std::{
     cell::UnsafeCell,
-    error::Error,
-    io::Error as IoError,
+    io::{Error, ErrorKind},
     marker::PhantomPinned,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
@@ -28,7 +27,7 @@ impl Drop for RawMutex {
 }
 
 impl RawMutex {
-    pub const fn new() -> impl InitPin<Self, Error = IoError> {
+    pub const fn new() -> impl InitPin<Self, Error = Error> {
         try_raw_pin(|mut uninit: Uninit<Self>, slot| {
             let ptr = uninit.as_mut_ptr() as *mut libc::pthread_mutex_t;
             unsafe {
@@ -37,7 +36,7 @@ impl RawMutex {
                 let mut attr = MaybeUninit::uninit();
                 let ret = libc::pthread_mutexattr_init(attr.as_mut_ptr());
                 if ret != 0 {
-                    let error = IoError::from_raw_os_error(ret);
+                    let error = Error::from_raw_os_error(ret);
                     return Err(InitPinError::new(error, uninit, slot));
                 }
 
@@ -45,14 +44,14 @@ impl RawMutex {
                     libc::pthread_mutexattr_settype(attr.as_mut_ptr(), libc::PTHREAD_MUTEX_NORMAL);
                 if ret != 0 {
                     libc::pthread_mutexattr_destroy(attr.as_mut_ptr());
-                    let error = IoError::from_raw_os_error(ret);
+                    let error = Error::from_raw_os_error(ret);
                     return Err(InitPinError::new(error, uninit, slot));
                 }
 
                 let ret = libc::pthread_mutex_init(ptr, attr.as_ptr());
                 libc::pthread_mutexattr_destroy(attr.as_mut_ptr());
                 if ret != 0 {
-                    let error = IoError::from_raw_os_error(ret);
+                    let error = Error::from_raw_os_error(ret);
                     return Err(InitPinError::new(error, uninit, slot));
                 }
 
@@ -61,10 +60,10 @@ impl RawMutex {
         })
     }
 
-    pub fn lock(&self) -> Result<RawMutexGuard<'_>, IoError> {
+    pub fn lock(&self) -> Result<RawMutexGuard<'_>, Error> {
         let ret = unsafe { libc::pthread_mutex_lock(self.lock.get()) };
         if ret != 0 {
-            return Err(IoError::from_raw_os_error(ret));
+            return Err(Error::from_raw_os_error(ret));
         }
         Ok(RawMutexGuard { mutex: self })
     }
@@ -92,22 +91,17 @@ unsafe impl<T: ?Sized + Send> Send for Mutex<T> {}
 unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
 
 impl<T: ?Sized> Mutex<T> {
-    pub const fn new<I, M>(data: I) -> impl InitPin<Self, Error = Box<dyn Error>>
+    pub const fn new<I, M>(data: I) -> impl InitPin<Self, Error = Error>
     where
-        I: IntoInit<T, M, Error: std::error::Error + 'static>,
+        I: IntoInit<T, M, Error: std::error::Error + Send + Sync + 'static>,
     {
-        init_pin!(
-            #[err_into]
-            Mutex {
-                #[pin]
-                raw: RawMutex::new(),
-                #[pin]
-                data: UnsafeCell(data)
-            }
-        )
+        init_pin!(Mutex {
+            raw: RawMutex::new(),
+            data: init_pin!(UnsafeCell(data)).map_err(|e| Error::new(ErrorKind::InvalidData, e))
+        })
     }
 
-    pub fn lock(&self) -> Result<Pin<MutexGuard<'_, T>>, IoError> {
+    pub fn lock(&self) -> Result<Pin<MutexGuard<'_, T>>, Error> {
         let guard = self.raw.lock()?;
         Ok(unsafe {
             Pin::new_unchecked(MutexGuard {
@@ -167,7 +161,7 @@ fn main() {
     {
         let mut m: POwn<TwoMutexes> = pown!(init_pin!(TwoMutexes {
             a: Mutex::new(0),
-            b: Mutex::new(TestPinned(1, PhantomPinned)),
+            b: Mutex::new(init_pin!(TestPinned(1, PhantomPinned))),
         }));
 
         println!("{}", *m.a.lock().unwrap());
