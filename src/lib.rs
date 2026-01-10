@@ -377,15 +377,18 @@ pub use placid_macro::InitPin;
 ///     // Specify an optional error type for
 ///     // sub-initializers to convert into.
 ///     // Otherwise, no conversion is performed.
-///     #[err(ErrorType)]
+///     #[err_into(ErrorType)]
 ///     TypeName {
 ///         field: initializer,
 ///         // Sub-initializers can also have their own error types.
-///         #[err(SubErrorType)]
+///         #[err_into(SubErrorType)]
 ///         nested: NestedType {
 ///             subfield: initializer,
 ///             ...
 ///         }
+///         // Mark `err_into` without an argument to indicate
+///         // automatic `Into::into`.
+///         #[err_into]
 ///         nested2: Tuple(initializer, ...),
 ///         ...
 ///     }
@@ -429,17 +432,20 @@ pub use placid_macro::init;
 ///     // Specify an optional error type for
 ///     // sub-initializers to convert into.
 ///     // Otherwise, no conversion is performed.
-///     #[err(ErrorType)]
+///     #[err_into(ErrorType)]
 ///     TypeName {
 ///         field: initializer,
 ///         // Sub-initializers can also have their own error types.
-///         #[err(SubErrorType)]
+///         #[err_into(SubErrorType)]
 ///         nested: NestedType {
 ///             subfield: initializer,
 ///             ...
 ///         }
 ///         // Pinned fields must be marked with `#[pin]`.
 ///         #[pin]
+///         // Mark `err_into` without an argument to indicate
+///         // automatic `Into::into`.
+///         #[err_into]
 ///         nested2: Tuple(initializer, ...),
 ///         ...
 ///     }

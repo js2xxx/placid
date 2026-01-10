@@ -285,7 +285,6 @@ where
     UnwrapOrElse { init1, f }
 }
 
-
 /// Maps the error type of an initializer using a closure.
 ///
 /// This initializer is created by calling the [`Init::map_err`] or

@@ -463,22 +463,25 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
             quote_spanned! { mixed_site => slot }
         });
 
-        let (structural_trait, structural_ty, structural_func, structural_where) =
-            if let Some(pin_lifetime) = &pin_lifetime {
-                (
-                    quote_spanned! { mixed_site => StructuralInitPin },
-                    quote_spanned! { mixed_site => __BuilderInitPin<#this_lifetime: #pin_lifetime> },
-                    quote_spanned! { mixed_site => __builder_init_pin<#this_lifetime> },
-                    quote_spanned! { mixed_site => where Self: #this_lifetime },
-                )
-            } else {
-                (
-                    quote_spanned! { mixed_site => StructuralInit },
-                    quote_spanned! { mixed_site => __BuilderInit },
-                    quote_spanned! { mixed_site => __builder_init },
-                    quote_spanned! { mixed_site => },
-                )
-            };
+        let (structural_trait, structural_ty, structural_func, structural_where) = if let Some(
+            pin_lifetime,
+        ) =
+            &pin_lifetime
+        {
+            (
+                quote_spanned! { mixed_site => StructuralInitPin },
+                quote_spanned! { mixed_site => __BuilderInitPin<#this_lifetime: #pin_lifetime> },
+                quote_spanned! { mixed_site => __builder_init_pin<#this_lifetime> },
+                quote_spanned! { mixed_site => where Self: #this_lifetime },
+            )
+        } else {
+            (
+                quote_spanned! { mixed_site => StructuralInit },
+                quote_spanned! { mixed_site => __BuilderInit },
+                quote_spanned! { mixed_site => __builder_init },
+                quote_spanned! { mixed_site => },
+            )
+        };
 
         quote_spanned! { mixed_site =>
             impl<

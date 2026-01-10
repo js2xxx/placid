@@ -97,7 +97,7 @@ impl<T: ?Sized> Mutex<T> {
         I: IntoInit<T, M, Error: std::error::Error + 'static>,
     {
         init_pin!(
-            #[err(Box<dyn Error>)]
+            #[err_into]
             Mutex {
                 #[pin]
                 raw: RawMutex::new(),

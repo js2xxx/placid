@@ -11,7 +11,7 @@ struct TestStruct {
 #[test]
 fn test_build() {
     let pown: POwn<TestStruct> = pown!(init_pin!(
-        #[err(core::convert::Infallible)]
+        #[err_into(core::convert::Infallible)]
         TestStruct {
             a: init::value(99).and(|i| *i += 1),
             b: init::with(|| String::from("Hello")),

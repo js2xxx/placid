@@ -51,7 +51,7 @@ fn possible_struct_call(call: &ExprCall) -> bool {
 #[derive(Default)]
 struct InitVisit {
     pinned: bool,
-    err_ty: Option<Type>,
+    err_ty: Option<Option<Type>>,
     err: Option<syn::Error>,
 }
 
@@ -68,18 +68,22 @@ impl InitVisit {
         &mut self,
         attrs: &mut Vec<Attribute>,
         scan_pin: bool,
-    ) -> (Option<Type>, Option<bool>) {
+    ) -> (Option<Option<Type>>, Option<bool>) {
         let mut ret = None;
         let mut pinned = scan_pin.then_some(false);
         attrs.retain(|a| {
-            if a.path().is_ident("err") {
+            if a.path().is_ident("err_into") {
                 if ret.is_none() {
-                    match a.parse_args() {
-                        Ok(ty) => ret = Some(ty),
-                        Err(e) => self.extend_err(e),
+                    if matches!(a.meta, Meta::Path(_)) {
+                        ret = Some(None);
+                    } else {
+                        match a.parse_args() {
+                            Ok(ty) => ret = Some(Some(ty)),
+                            Err(e) => self.extend_err(e),
+                        }
                     }
                 } else {
-                    self.extend_err(syn::Error::new_spanned(a, "duplicate `err` attribute"));
+                    self.extend_err(syn::Error::new_spanned(a, "duplicate `err_into` attribute"));
                 };
                 false
             } else if scan_pin && self.pinned && a.path().is_ident("pin") {
@@ -101,7 +105,7 @@ impl InitVisit {
     fn visit_inner_expr_mut(
         &mut self,
         expr: &mut Expr,
-        (err_ty, pinned): (Option<Type>, Option<bool>),
+        (err_ty, pinned): (Option<Option<Type>>, Option<bool>),
     ) {
         let old_err = mem::replace(&mut self.err_ty, err_ty);
         let old_pinned = pinned.map(|pinned| mem::replace(&mut self.pinned, pinned));
@@ -190,7 +194,7 @@ impl VisitMut for InitVisit {
             _ => return,
         };
 
-        let generics = if let Some(err) = &self.err_ty {
+        let generics = if let Some(Some(err)) = &self.err_ty {
             quote_spanned! { span => ::<_, #err, _> }
         } else {
             quote_spanned! { span => ::<_, _, _> }
