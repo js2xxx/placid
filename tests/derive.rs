@@ -13,7 +13,7 @@ fn test_build() {
     let pown: POwn<TestStruct> = pown!(init_pin! {
         #[err(core::convert::Infallible)]
         TestStruct {
-            a: 42,
+            a: init::value(42),
             b: || String::from("Hello"),
         }
     });
@@ -22,7 +22,7 @@ fn test_build() {
 
     let own: Own<TestStruct> = own!(init! {
         TestStruct {
-            a: 100,
+            a: init::value(99).and(|i| *i += 1),
             b: || String::from("World"),
         }
     });
@@ -36,7 +36,6 @@ fn test_drop() {
         static DROPPED: Cell<bool> = const { Cell::new(false) };
     }
 
-    #[derive(InitPin, Init)]
     struct DropTracker;
     impl Drop for DropTracker {
         fn drop(&mut self) {
@@ -53,7 +52,7 @@ fn test_drop() {
     let t = std::panic::catch_unwind(|| {
         let _: POwn<TestDrop> = pown!(init_pin! {
             TestDrop {
-                tracker: DropTracker,
+                tracker: || DropTracker,
                 bomb: || -> u32 { panic!("Initialization failed") },
             }
         });
@@ -65,7 +64,7 @@ fn test_drop() {
         let _: Own<TestDrop> = own!(init! {
             #[err(core::convert::Infallible)]
             TestDrop {
-                tracker: DropTracker,
+                tracker: init::value(DropTracker),
                 bomb: || -> u32 { panic!("Initialization failed") },
             }
         });
@@ -82,4 +81,41 @@ where
     base: PhantomData<Base>,
     ptr: PhantomData<Ptr>,
     pub(crate) pin: PhantomData<Pin>,
+}
+
+#[derive(InitPin, Init)]
+struct Nested {
+    field: TestStruct,
+    unpinned: u64,
+}
+
+#[test]
+fn test_nested() {
+    let pown: POwn<Nested> = pown!(init_pin! {
+        #[err(core::convert::Infallible)]
+        Nested {
+            field: TestStruct {
+                a: 7,
+                b: || String::from("Nested"),
+            },
+            unpinned: 123,
+        }
+    });
+    assert_eq!(pown.field.a, 7);
+    assert_eq!(pown.field.b, "Nested");
+    assert_eq!(pown.unpinned, 123);
+
+    let own: Own<Nested> = own!(init! {
+        #[err(core::convert::Infallible)]
+        Nested {
+            field: TestStruct {
+                a: 8,
+                b: || String::from("Nested Own"),
+            },
+            unpinned: 456,
+        }
+    });
+    assert_eq!(own.field.a, 8);
+    assert_eq!(own.field.b, "Nested Own");
+    assert_eq!(own.unpinned, 456);
 }

@@ -1,9 +1,6 @@
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{
-    Attribute, Expr, ExprCall, ExprPath, Type,
-    visit_mut::{self, VisitMut},
-};
+use syn::{Attribute, Expr, ExprCall, ExprPath, Result, Type, visit_mut::VisitMut};
 
 fn char_has_case(c: char) -> bool {
     let l = c.to_lowercase();
@@ -49,56 +46,45 @@ fn looks_like_tuple_struct_call(call: &ExprCall) -> bool {
     }
 }
 
-fn scan_attribute(attrs: &mut Vec<Attribute>) -> Option<bool> {
+fn scan_attribute(attrs: &mut Vec<Attribute>) -> Result<Option<Type>> {
     let mut ret = None;
     attrs.retain(|a| {
-        if a.path().is_ident("unpin") {
-            ret = Some(false);
-            false
-        } else if a.path().is_ident("pin") {
-            ret = Some(true);
+        if a.path().is_ident("err") {
+            ret = if ret.is_none() {
+                Some(a.parse_args())
+            } else {
+                Some(Err(syn::Error::new_spanned(a, "duplicate `err` attribute")))
+            };
             false
         } else {
             true
         }
     });
-    ret
+    ret.transpose()
 }
 
 struct InitVisit {
-    should_replace: bool,
     pinned: bool,
-    err: Option<Type>,
+    err: Option<syn::Error>,
 }
 
 impl VisitMut for InitVisit {
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         let span = Span::mixed_site();
-        let (path, builder_segment) = match expr {
+        let (path, err, builder_segment) = match expr {
             Expr::Path(path) if looks_like_tuple_struct_name(path) => {
-                if let Some(v) = scan_attribute(&mut path.attrs) {
-                    self.should_replace = v;
-                }
+                let err = scan_attribute(&mut path.attrs).unwrap_or_else(|e| {
+                    self.err = Some(e);
+                    None
+                });
 
-                if !self.should_replace {
-                    return visit_mut::visit_expr_mut(self, expr);
-                }
-
-                (quote!(#path), Vec::new())
+                (quote!(#path), err, Vec::new())
             }
             Expr::Call(call) if looks_like_tuple_struct_call(call) => {
-                if let Some(v) = scan_attribute(&mut call.attrs) {
-                    self.should_replace = v;
-                }
-
-                if !self.should_replace {
-                    // We must not visit call.func otherwise it'll be treated
-                    // as unit struct.
-                    for expr in &mut call.args {
-                        self.visit_expr_mut(expr);
-                    }
-                    return;
-                }
+                let err = scan_attribute(&mut call.attrs).unwrap_or_else(|e| {
+                    self.err = Some(e);
+                    None
+                });
 
                 let path = &call.func;
 
@@ -118,16 +104,13 @@ impl VisitMut for InitVisit {
                         }
                     });
                 }
-                (quote!(#path), builder_segment)
+                (quote!(#path), err, builder_segment)
             }
             Expr::Struct(ctor) => {
-                if let Some(v) = scan_attribute(&mut ctor.attrs) {
-                    self.should_replace = v;
-                }
-
-                if !self.should_replace {
-                    return visit_mut::visit_expr_mut(self, expr);
-                }
+                let err = scan_attribute(&mut ctor.attrs).unwrap_or_else(|e| {
+                    self.err = Some(e);
+                    None
+                });
 
                 let path = &ctor.path;
 
@@ -149,15 +132,15 @@ impl VisitMut for InitVisit {
                         }
                     });
                 }
-                (quote!(#path), builder_segment)
+                (quote!(#path), err, builder_segment)
             }
-            _ => return visit_mut::visit_expr_mut(self, expr),
+            _ => return,
         };
 
-        let generics = if let Some(ty) = &self.err {
-            quote_spanned! { span => ::<_, #ty, _> }
+        let generics = if let Some(err) = err {
+            quote_spanned! { span => ::<#path, #err, _> }
         } else {
-            quote_spanned! { span => }
+            quote_spanned! { span => ::<#path, _, _> }
         };
 
         *expr = if self.pinned {
@@ -182,53 +165,14 @@ impl VisitMut for InitVisit {
     }
 }
 
-pub struct Input {
-    err: Option<syn::Type>,
-    expr: Expr,
+pub fn init_pin(mut input: Expr) -> syn::Result<TokenStream> {
+    let mut visitor = InitVisit { pinned: true, err: None };
+    visitor.visit_expr_mut(&mut input);
+    Ok(quote!(#input))
 }
 
-impl syn::parse::Parse for Input {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut err = None;
-        for attr in input.call(syn::Attribute::parse_outer)? {
-            if attr.path().is_ident("err") {
-                if err.is_some() {
-                    return Err(syn::Error::new_spanned(
-                        attr,
-                        "duplicate `err` attribute",
-                    ));
-                }
-                err = Some(attr.parse_args()?);
-            } else {
-                return Err(syn::Error::new_spanned(
-                    attr,
-                    "unknown attribute, expected `err`",
-                ));
-            }
-        }
-        let expr = input.parse()?;
-        Ok(Input { err, expr })
-    }
-}
-
-pub fn init_pin(input: Input) -> syn::Result<Expr> {
-    let mut visitor = InitVisit {
-        should_replace: true,
-        pinned: true,
-        err: input.err,
-    };
-    let mut expr = input.expr;
-    visitor.visit_expr_mut(&mut expr);
-    Ok(expr)
-}
-
-pub fn init(input: Input) -> syn::Result<Expr> {
-    let mut visitor = InitVisit {
-        should_replace: true,
-        pinned: false,
-        err: input.err,
-    };
-    let mut expr = input.expr;
-    visitor.visit_expr_mut(&mut expr);
-    Ok(expr)
+pub fn init(mut input: Expr) -> syn::Result<TokenStream> {
+    let mut visitor = InitVisit { pinned: false, err: None };
+    visitor.visit_expr_mut(&mut input);
+    Ok(quote!(#input))
 }
