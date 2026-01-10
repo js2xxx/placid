@@ -1,3 +1,7 @@
+//! Traits and types for working with places in memory.
+//! 
+//! See the [`Place`] trait for more details.
+
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
 use core::{
     alloc::Allocator,

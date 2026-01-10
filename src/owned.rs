@@ -1,3 +1,19 @@
+//! Owned references and related utilities.
+//!
+//! This module provides the [`Own<T>`] type, which represents an owned
+//! reference to a fully initialized value in a place. It also includes macros
+//! and traits for creating and manipulating owned references.
+//!
+//! For constructing owned references onto the stack, see the [`own!`] macro.
+//!
+//! For converting containers into owned references, see the [`IntoOwn`] trait
+//! and the [`into_own!`] macro.
+//!
+//! [`Own<T>`]: crate::Own
+//! [`own!`]: crate::own
+//! [`IntoOwn`]: crate::owned::IntoOwn
+//! [`into_own!`]: crate::into_own
+
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
 use core::{
     alloc::Allocator,

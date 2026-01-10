@@ -1,3 +1,7 @@
+//! Types and traits for working with uninitialized memory places.
+//!
+//! See the [`Uninit`] type for more details.
+
 use core::{
     fmt,
     mem::{self, MaybeUninit},

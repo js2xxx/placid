@@ -1,3 +1,25 @@
+//! Types and macros for managing pinned owned references with proper drop
+//! semantics.
+//!
+//! This module provides utilities for creating [drop slots], which are used
+//! to manage the lifetime of pinned owned references. The [`POwn<T>`] type
+//! represents a pinned owned reference (semantically equivalent to
+//! `Pin<Own<T>>`) that cannot be forgotten, ensuring that pinned values
+//! are properly dropped. It also includes macros and traits for creating and
+//! manipulating pinned owned references.
+//! 
+//! For constructing pinned owned references onto the stack, see the
+//! [`pown!`] macro.
+//! 
+//! For converting containers into owned references, see the [`IntoOwn`] trait
+//! and the [`into_pown!`] macro.
+//!
+//! [drop slots]: crate::drop_slot
+//! [`POwn<T>`]: crate::POwn
+//! [`pown!`]: crate::pown
+//! [`IntoOwn`]: crate::owned::IntoOwn
+//! [`into_pown!`]: crate::into_pown
+
 use core::{
     cell::Cell,
     error::Error,
@@ -118,12 +140,11 @@ impl<'a, 'b, T: ?Sized> DropSlot<'a, 'b, T> {
 
 /// Creates a new drop slot for pinned value initialization.
 ///
-/// This macro is the recommended way to create a `DropSlot`. It automatically
-/// creates a `DroppingSlot` with the appropriate scope and returns a `DropSlot`
-/// reference that can be used to initialize pinned values.
+/// This macro is the recommended way to create a [`DropSlot`] constrained to
+/// the current scope.
 ///
 /// The macro ensures that the drop slot cannot be accidentally forgotten, as
-/// the underlying `DroppingSlot` is bound to the macro's scope and will be
+/// the underlying drop slot is bound to the macro's scope and will be
 /// automatically dropped when the scope ends.
 ///
 /// # Examples

@@ -23,7 +23,7 @@ fn test_build() {
     let own: Own<TestStruct> = own!(init! {
         TestStruct {
             a: init::value(99).and(|i| *i += 1),
-            b: || String::from("World"),
+            b: init::with(|| String::from("World")),
         }
     });
     assert_eq!(own.a, 100);
@@ -109,8 +109,8 @@ fn test_nested() {
         #[err(core::convert::Infallible)]
         Nested {
             field: TestStruct {
-                a: 8,
-                b: || String::from("Nested Own"),
+                a: init::value(7).and(|i| *i += 1),
+                b: init::with(|| String::from("Nested Own")),
             },
             unpinned: 456,
         }

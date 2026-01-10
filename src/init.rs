@@ -91,7 +91,9 @@ pub type InitPinResult<'a, 'b, I> = Result<
 /// after `c` is initialized, no cleanup is necessary since `c` is not pinned
 /// and can be safely `mem::forget`ed.
 pub trait InitPin<'b>: Sized {
+    /// The target type being initialized.
     type Target: ?Sized;
+    /// The error type that can occur during initialization.
     type Error;
 
     /// Initializes a place with a pinned value.
@@ -307,9 +309,12 @@ pub trait Init<'b>: InitPin<'b> {
 /// This trait is used to allow types to be directly used as initializers
 /// without needing to wrap them in a specific initializer factory function.
 pub trait IntoInit<'b, T: ?Sized, Marker = ()>: Sized {
+    /// Which kind of initializer this converts into?
     type Init: InitPin<'b, Target = T, Error = Self::Error>;
+    /// The error type that can occur during initialization.
     type Error;
 
+    /// Creates an initializer from this value.
     fn into_init(self) -> Self::Init;
 }
 
@@ -332,13 +337,13 @@ impl<'b, I: InitPin<'b>> IntoInit<'b, I::Target> for I {
 ///
 /// Users should not implement this trait manually. It is intended to be
 /// automatically derived to ensure correct behavior.
-pub unsafe trait StructuralInitPin<'b> {
-    /// The structural initializer.
+pub unsafe trait StructuralInitPin<'b>: Sized {
+    #[doc(hidden)]
     type InitPin<'a: 'b>
     where
         Self: 'a;
 
-    /// Start initializing the type in a pinned place.
+    #[doc(hidden)]
     fn init_pin<'a>(place: Uninit<'a, Self>, slot: DropSlot<'a, 'b, Self>) -> Self::InitPin<'a>
     where
         Self: 'a;
@@ -354,11 +359,11 @@ pub unsafe trait StructuralInitPin<'b> {
 ///
 /// Users should not implement this trait manually. It is intended to be
 /// automatically derived to ensure correct behavior.
-pub unsafe trait StructuralInit<'b> {
-    /// The structural initializer.
+pub unsafe trait StructuralInit<'b>: Sized {
+    #[doc(hidden)]
     type Init;
 
-    /// Start initializing the type in a place.
+    #[doc(hidden)]
     fn init(place: Uninit<'b, Self>) -> Self::Init;
 }
 
