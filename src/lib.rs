@@ -184,6 +184,7 @@
 //!
 //! #[derive(InitPin)]
 //! struct Nested {
+//!     #[pin]
 //!     a: A,
 //!     d: [u8; 1024],
 //!     mid: *mut u8,
@@ -193,6 +194,7 @@
 //!     pub fn new(c: &str) -> impl InitPin<Self, Error = Infallible> {
 //!         init_pin!(Nested {
 //!             // Nested initializers are supported.
+//!             #[pin]
 //!             a: A {
 //!                 // Values and closures are all initializers.
 //!                 b: 100,
@@ -203,6 +205,7 @@
 //!             d: init::repeat(42),
 //!             mid: std::ptr::null_mut(),
 //!         })
+//!         // `and{_pin}`, `or`, `or_else` are initializer combinators.
 //!         .and_pin(|this| unsafe {
 //!             // SAFETY: We are initializing the self-referential pointer.
 //!             let this = Pin::into_inner_unchecked(this);
@@ -265,8 +268,6 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
-pub use placid_macro::{Init, InitPin, init, init_pin};
-
 pub mod place;
 pub use self::place::{Place, Placed};
 
@@ -281,3 +282,183 @@ pub use self::init::{Init, InitPin};
 mod sealed {
     pub trait Sealed {}
 }
+
+/// Marks a type as structurally initializable.
+///
+/// It provides a method to structurally initialize the type in an unpinned
+/// context. The initializer can be created by the [`macro@init!`] macro.
+///
+/// It also implements [`init::StructuralInit`] for the derived type.
+///
+/// A struct type may derive both [`Init`] and [`InitPin`] if it supports both
+/// unpinned and pinned initialization. However, the `#[pin]` attribute is only
+/// applicable to the `InitPin` derivation, and is treated as omitted when
+/// deriving `Init`.
+///
+/// # Examples
+///
+/// A simple usage example (although not practical):
+///
+/// ```rust
+/// use placid::{own, Own, init, Init};
+///
+/// #[derive(Init)]
+/// struct Point {
+///     x: i32,
+///     y: i32,
+/// }
+///
+/// let owned: Own<Point> = own!(init!(Point { x: 10, y: 20 }));
+/// assert_eq!(owned.x, 10);
+/// assert_eq!(owned.y, 20);
+/// ```
+///
+/// For more complex usage, see the [crate-level documentation](crate) for
+/// more information.
+pub use placid_macro::Init;
+/// Marks a type as structurally pin-initializable.
+///
+/// It provides a method to structurally initialize the type in a pinned
+/// context. The initializer can be created by the [`macro@init!`] macro.
+///
+/// It also implements [`init::StructuralInitPin`] for the derived type.
+///
+/// A struct type may derive both [`Init`] and [`InitPin`] if it supports both
+/// unpinned and pinned initialization. However, the `#[pin]` attribute is only
+/// applicable to the `InitPin` derivation, and is treated as omitted when
+/// deriving `Init`.
+///
+/// # Examples
+///
+/// A simple usage example (although not practical):
+///
+/// ```rust
+/// use placid::{pown, POwn, init_pin, InitPin};
+/// use std::{marker::PhantomPinned, pin::Pin};
+///
+/// #[derive(InitPin, Debug)]
+/// struct Pinned {
+///     ptr: *const Pinned,
+///     marker: PhantomPinned,
+/// }
+///
+/// let owned: POwn<Pinned> = pown!(init_pin!(Pinned {
+///     ptr: std::ptr::null(),
+///     marker: || PhantomPinned,
+/// })
+/// .and_pin(|this| unsafe {
+///     // SAFETY: We are initializing the self-referential pointer.
+///     let this = Pin::into_inner_unchecked(this);
+///     this.ptr = std::ptr::from_ref(this);
+/// }));
+///
+/// assert_eq!(owned.ptr, &*owned);
+/// ```
+///
+/// For more complex usage, see the [crate-level documentation](crate) for
+/// more information.
+pub use placid_macro::InitPin;
+/// Creates an initializer for a [structurally initialized] type.
+///
+/// # Syntax
+///
+/// The macro accepts standard Rust expressions, but it will expand those which
+/// match the following pattern into structured initializers:
+///
+/// ```ignore
+/// init!(
+///     // Specify an optional error type for
+///     // sub-initializers to convert into.
+///     // Otherwise, no conversion is performed.
+///     #[err(ErrorType)] TypeName {
+///         field: initializer,
+///         // Sub-initializers can also have their own error types.
+///         #[err(SubErrorType)]
+///         nested: NestedType {
+///             subfield: initializer,
+///             ...
+///         }
+///         nested2: Tuple(initializer, ...),
+///         ...
+///     }
+/// )
+/// ```
+///
+/// Expressions that do not match the above pattern are treated as-is.
+///
+/// # Examples
+///
+/// A simple usage example (although not practical):
+///
+/// ```rust
+/// use placid::{own, Own, init, Init};
+///
+/// #[derive(Init)]
+/// struct Point {
+///     x: i32,
+///     y: i32,
+/// }
+///
+/// let owned: Own<Point> = own!(init!(Point { x: 10, y: 20 }));
+/// assert_eq!(owned.x, 10);
+/// assert_eq!(owned.y, 20);
+/// ```
+///
+/// For more complex usage, see the [crate-level documentation](crate) for more
+/// information.
+///
+/// [structurally initialized]: macro@crate::Init
+pub use placid_macro::init;
+/// Creates a pin-initializer for a [structurally pin-initialized] type.
+///
+/// # Syntax
+///
+/// The macro accepts standard Rust expressions, but it will expand those which
+/// match the following pattern into structured initializers:
+///
+/// ```ignore
+/// init_pin!(
+///     // Specify an optional error type for
+///     // sub-initializers to convert into.
+///     // Otherwise, no conversion is performed.
+///     #[err(ErrorType)] TypeName {
+///         field: initializer,
+///         // Sub-initializers can also have their own error types.
+///         #[err(SubErrorType)]
+///         nested: NestedType {
+///             subfield: initializer,
+///             ...
+///         }
+///         // Pinned fields must be marked with `#[pin]`.
+///         #[pin]
+///         nested2: Tuple(initializer, ...),
+///         ...
+///     }
+/// )
+/// ```
+///
+/// Expressions that do not match the above pattern are treated as-is.
+///
+/// # Examples
+///
+/// A simple usage example (although not practical):
+///
+/// ```rust
+/// use placid::{own, Own, init, Init};
+///
+/// #[derive(Init)]
+/// struct Point {
+///     x: i32,
+///     y: i32,
+/// }
+///
+/// let owned: Own<Point> = own!(init!(Point { x: 10, y: 20 }));
+/// assert_eq!(owned.x, 10);
+/// assert_eq!(owned.y, 20);
+/// ```
+///
+/// For more complex usage, see the [crate-level documentation](crate) for more
+/// information.
+///
+/// [structurally pin-initialized]: macro@crate::InitPin
+pub use placid_macro::init_pin;

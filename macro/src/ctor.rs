@@ -1,6 +1,8 @@
+use std::mem;
+
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{Attribute, Expr, ExprCall, ExprPath, Result, Type, visit_mut::VisitMut};
+use syn::{Attribute, Expr, ExprCall, ExprPath, Meta, Type, visit_mut::VisitMut};
 
 fn char_has_case(c: char) -> bool {
     let l = c.to_lowercase();
@@ -35,90 +37,135 @@ fn is_camel_case(name: &str) -> bool {
         })
 }
 
-fn looks_like_tuple_struct_name(path: &ExprPath) -> bool {
+fn possible_struct_name(path: &ExprPath) -> bool {
     is_camel_case(&path.path.segments.last().unwrap().ident.to_string())
 }
 
-fn looks_like_tuple_struct_call(call: &ExprCall) -> bool {
+fn possible_struct_call(call: &ExprCall) -> bool {
     match &*call.func {
-        Expr::Path(path) => looks_like_tuple_struct_name(path),
+        Expr::Path(path) => possible_struct_name(path),
         _ => false,
     }
 }
 
-fn scan_attribute(attrs: &mut Vec<Attribute>) -> Result<Option<Type>> {
-    let mut ret = None;
-    attrs.retain(|a| {
-        if a.path().is_ident("err") {
-            ret = if ret.is_none() {
-                Some(a.parse_args())
-            } else {
-                Some(Err(syn::Error::new_spanned(a, "duplicate `err` attribute")))
-            };
-            false
-        } else {
-            true
-        }
-    });
-    ret.transpose()
-}
-
+#[derive(Default)]
 struct InitVisit {
     pinned: bool,
+    err_ty: Option<Type>,
     err: Option<syn::Error>,
+}
+
+impl InitVisit {
+    fn extend_err(&mut self, other: syn::Error) {
+        if let Some(err) = &mut self.err {
+            err.combine(other);
+        } else {
+            self.err = Some(other);
+        }
+    }
+
+    fn scan_attribute(
+        &mut self,
+        attrs: &mut Vec<Attribute>,
+        scan_pin: bool,
+    ) -> (Option<Type>, Option<bool>) {
+        let mut ret = None;
+        let mut pinned = scan_pin.then_some(false);
+        attrs.retain(|a| {
+            if a.path().is_ident("err") {
+                if ret.is_none() {
+                    match a.parse_args() {
+                        Ok(ty) => ret = Some(ty),
+                        Err(e) => self.extend_err(e),
+                    }
+                } else {
+                    self.extend_err(syn::Error::new_spanned(a, "duplicate `err` attribute"));
+                };
+                false
+            } else if scan_pin && self.pinned && a.path().is_ident("pin") {
+                pinned = Some(true);
+                if !matches!(a.meta, Meta::Path(_)) {
+                    self.extend_err(syn::Error::new_spanned(
+                        a,
+                        "`pin` attribute does not take arguments",
+                    ))
+                }
+                false
+            } else {
+                true
+            }
+        });
+        (ret, pinned)
+    }
+
+    fn visit_inner_expr_mut(
+        &mut self,
+        expr: &mut Expr,
+        (err_ty, pinned): (Option<Type>, Option<bool>),
+    ) {
+        let old_err = mem::replace(&mut self.err_ty, err_ty);
+        let old_pinned = pinned.map(|pinned| mem::replace(&mut self.pinned, pinned));
+        self.visit_expr_mut(expr);
+        if let Some(old_pinned) = old_pinned {
+            self.pinned = old_pinned;
+        }
+        self.err_ty = old_err;
+    }
+
+    fn visit_root_expr_mut(&mut self, expr: &mut Expr, scan_pin: bool) {
+        let attrs = match match expr {
+            Expr::Path(path) if possible_struct_name(path) => Some(&mut path.attrs),
+            Expr::Call(call) if possible_struct_call(call) => Some(&mut call.attrs),
+            Expr::Struct(ctor) => Some(&mut ctor.attrs),
+            _ => None,
+        } {
+            Some(attrs) => self.scan_attribute(attrs, scan_pin),
+            None => (None, None),
+        };
+        self.visit_inner_expr_mut(expr, attrs);
+    }
 }
 
 impl VisitMut for InitVisit {
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         let span = Span::mixed_site();
-        let (path, err, builder_segment) = match expr {
-            Expr::Path(path) if looks_like_tuple_struct_name(path) => {
-                let err = scan_attribute(&mut path.attrs).unwrap_or_else(|e| {
-                    self.err = Some(e);
-                    None
-                });
-
-                (quote!(#path), err, Vec::new())
+        let (path, attrs, builder_segment) = match expr {
+            Expr::Path(path) if possible_struct_name(path) => {
+                (quote!(#path), mem::take(&mut path.attrs), Vec::new())
             }
-            Expr::Call(call) if looks_like_tuple_struct_call(call) => {
-                let err = scan_attribute(&mut call.attrs).unwrap_or_else(|e| {
-                    self.err = Some(e);
-                    None
-                });
-
+            Expr::Call(call) if possible_struct_call(call) => {
                 let path = &call.func;
 
                 let mut builder_segment = Vec::new();
                 for expr in &mut call.args {
-                    self.visit_expr_mut(expr);
+                    self.visit_root_expr_mut(expr, true);
+
                     builder_segment.push(if self.err.is_some() {
                         quote_spanned! { span =>
-                            let builder = builder.next(#expr)?;
+                            let builder = builder.__next(#expr)?;
                         }
                     } else {
                         quote_spanned! { span =>
-                            let builder = match builder.next(#expr) {
+                            let builder = match builder.__next(#expr) {
                                 Ok(v) => v,
                                 Err(err) => return Err(err),
                             };
                         }
                     });
                 }
-                (quote!(#path), err, builder_segment)
+                (quote!(#path), mem::take(&mut call.attrs), builder_segment)
             }
             Expr::Struct(ctor) => {
-                let err = scan_attribute(&mut ctor.attrs).unwrap_or_else(|e| {
-                    self.err = Some(e);
-                    None
-                });
-
                 let path = &ctor.path;
 
                 let mut builder_segment = Vec::new();
                 for field in &mut ctor.fields {
                     let member = &field.member;
                     let expr = &mut field.expr;
-                    self.visit_expr_mut(expr);
+
+                    let attrs = self.scan_attribute(&mut field.attrs, true);
+                    self.visit_inner_expr_mut(expr, attrs);
+
                     builder_segment.push(if self.err.is_some() {
                         quote_spanned! { span =>
                             let builder = builder.#member(#expr)?;
@@ -132,12 +179,12 @@ impl VisitMut for InitVisit {
                         }
                     });
                 }
-                (quote!(#path), err, builder_segment)
+                (quote!(#path), mem::take(&mut ctor.attrs), builder_segment)
             }
             _ => return,
         };
 
-        let generics = if let Some(err) = err {
+        let generics = if let Some(err) = &self.err_ty {
             quote_spanned! { span => ::<#path, #err, _> }
         } else {
             quote_spanned! { span => ::<#path, _, _> }
@@ -145,6 +192,7 @@ impl VisitMut for InitVisit {
 
         *expr = if self.pinned {
             syn::parse_quote_spanned! { span =>
+                #(#attrs)*
                 ::placid::init::try_raw_pin #generics(move |uninit, slot| {
                     use ::placid::init::StructuralInitPin;
                     let builder = <#path as StructuralInitPin>::init_pin(uninit, slot);
@@ -154,6 +202,7 @@ impl VisitMut for InitVisit {
             }
         } else {
             syn::parse_quote_spanned! { span =>
+                #(#attrs)*
                 ::placid::init::try_raw #generics(move |uninit| {
                     use ::placid::init::StructuralInit;
                     let builder = <#path as StructuralInit>::init(uninit);
@@ -166,13 +215,25 @@ impl VisitMut for InitVisit {
 }
 
 pub fn init_pin(mut input: Expr) -> syn::Result<TokenStream> {
-    let mut visitor = InitVisit { pinned: true, err: None };
-    visitor.visit_expr_mut(&mut input);
-    Ok(quote!(#input))
+    let mut visitor = InitVisit {
+        pinned: true,
+        ..Default::default()
+    };
+    visitor.visit_root_expr_mut(&mut input, false);
+    match visitor.err {
+        None => Ok(quote!(#input)),
+        Some(err) => Err(err),
+    }
 }
 
 pub fn init(mut input: Expr) -> syn::Result<TokenStream> {
-    let mut visitor = InitVisit { pinned: false, err: None };
-    visitor.visit_expr_mut(&mut input);
-    Ok(quote!(#input))
+    let mut visitor = InitVisit {
+        pinned: false,
+        ..Default::default()
+    };
+    visitor.visit_root_expr_mut(&mut input, false);
+    match visitor.err {
+        None => Ok(quote!(#input)),
+        Some(err) => Err(err),
+    }
 }

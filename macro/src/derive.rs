@@ -92,6 +92,11 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
         })
         .collect();
 
+    let is_pinned: Vec<_> = fields
+        .iter()
+        .map(|field| field.attrs.iter().any(|attr| attr.path().is_ident("pin")))
+        .collect();
+
     // Create identifier names that are unlikely to be used.
     let typestate_name: Vec<_> = field_name
         .iter()
@@ -185,6 +190,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
         });
 
         quote_spanned! { mixed_site =>
+            #[doc(hidden)]
             #vis struct #builder_ident<
                 #this_lifetime,
                 #(#pin_lifetime_q,)*
@@ -206,11 +212,14 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                 #(#ty_generics,)*
                 #typestate_ty
             > #where_clause {
-                unsafe fn drop_initialized(&mut self) {
+                #[doc(hidden)]
+                #[inline]
+                unsafe fn __drop_init(&mut self) {
                     let base = self.uninit.as_mut_ptr();
                     #drop_impl
                 }
 
+                #[doc(hidden)]
                 #[inline]
                 fn __err<#error_ident>(
                     self,
@@ -222,7 +231,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                     #error_ident,
                 > {
                     let mut this = ::core::mem::ManuallyDrop::new(self);
-                    unsafe { this.drop_initialized() };
+                    unsafe { this.__drop_init() };
                     ::placid::init::#init_error {
                         error: err,
                         place: unsafe { core::ptr::read(&this.uninit) },
@@ -242,8 +251,9 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                 #(#ty_generics,)*
                 #typestate_ty
             > #where_clause {
+                #[inline]
                 fn drop(&mut self) {
-                    unsafe { self.drop_initialized() };
+                    unsafe { self.__drop_init() };
                 }
             }
         }
@@ -251,6 +261,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
 
     for (i, field) in fields.iter().enumerate() {
         let field_name_cur = &field_name[i];
+        let field_pinned = is_pinned[i];
         let vis = &field.vis;
         let ty = &field.ty;
 
@@ -281,11 +292,11 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                 quote_spanned! { mixed_site => },
                 quote_spanned! { mixed_site => #i, },
                 quote_spanned! { mixed_site => #next, },
-                quote_spanned! { mixed_site => next },
+                quote_spanned! { mixed_site => __next },
             )
         };
 
-        let init_bound = if pinned {
+        let init_bound = if pinned && field_pinned {
             quote_spanned! { mixed_site => }
         } else {
             quote_spanned! { mixed_site =>
@@ -313,7 +324,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
             }
         });
 
-        let init_call = if pinned {
+        let init_call = if pinned && field_pinned {
             quote_spanned! { mixed_site =>
                 init.init_pin(field_place, slot_ref)
             }
@@ -324,6 +335,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
         };
 
         let func = quote_spanned! { mixed_site =>
+            #[inline]
             #vis fn #fn_name<
                 #arg_ident,
                 #error_ident,
@@ -495,6 +507,8 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                 #(#ty_generics,)*
                 #typestate_ty_post
             > #where_clause {
+                #[inline]
+                #[doc(hidden)]
                 pub fn build(self) -> #result_ty {
                     let mut this = ::core::mem::ManuallyDrop::new(self);
                     // SAFETY: All fields have been initialized.
@@ -517,6 +531,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                 >
                 #structural_where;
 
+                #[inline]
                 fn #structural_func(
                     uninit: ::placid::Uninit<
                         #this_lifetime,

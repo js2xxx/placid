@@ -1,7 +1,7 @@
 mod ctor;
 mod derive;
 
-#[proc_macro_derive(InitPin)]
+#[proc_macro_derive(InitPin, attributes(pin))]
 pub fn derive_init_pin(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     match derive::init_pin(&syn::parse_macro_input!(input as syn::DeriveInput)) {
         Ok(ts) => ts.into(),
