@@ -53,10 +53,7 @@ impl<'a, 'b, T: ?Sized, E: fmt::Debug> fmt::Debug for InitPinError<'a, 'b, T, E>
 /// The result type for [pinned initialization].
 ///
 /// [pinned initialization]: crate::init::InitPin::init_pin
-pub type InitPinResult<'a, 'b, I> = Result<
-    POwn<'b, <I as InitPin<'b>>::Target>,
-    InitPinError<'a, 'b, <I as InitPin<'b>>::Target, <I as InitPin<'b>>::Error>,
->;
+pub type InitPinResult<'a, 'b, T, E> = Result<POwn<'b, T>, InitPinError<'a, 'b, T, E>>;
 
 /// A trait for initializing a place with a pinned value.
 ///
@@ -90,9 +87,7 @@ pub type InitPinResult<'a, 'b, I> = Result<
 /// resuming the panic**. On the other hand, if the initialization of `b` fails
 /// after `c` is initialized, no cleanup is necessary since `c` is not pinned
 /// and can be safely `mem::forget`ed.
-pub trait InitPin<'b>: Sized {
-    /// The target type being initialized.
-    type Target: ?Sized;
+pub trait InitPin<'b, T: ?Sized>: Sized {
     /// The error type that can occur during initialization.
     type Error;
 
@@ -116,9 +111,9 @@ pub trait InitPin<'b>: Sized {
     /// [pinned owned reference]: crate::pin::POwn
     fn init_pin<'a>(
         self,
-        place: Uninit<'a, Self::Target>,
-        slot: DropSlot<'a, 'b, Self::Target>,
-    ) -> InitPinResult<'a, 'b, Self>;
+        place: Uninit<'a, T>,
+        slot: DropSlot<'a, 'b, T>,
+    ) -> InitPinResult<'a, 'b, T, Self::Error>;
 
     /// Chains a closure to execute after successful initialization with a
     /// pinned reference.
@@ -138,7 +133,7 @@ pub trait InitPin<'b>: Sized {
     /// );
     /// assert_eq!(*owned, [1, 2, 3, 4]);
     /// ```
-    fn and_pin<F: FnOnce(Pin<&mut Self::Target>)>(self, f: F) -> AndPin<Self, F> {
+    fn and_pin<F: FnOnce(Pin<&mut T>)>(self, f: F) -> AndPin<Self, F> {
         and_pin(self, f)
     }
 
@@ -162,7 +157,7 @@ pub trait InitPin<'b>: Sized {
     /// ```
     fn or<M, I2>(self, other: I2) -> Or<Self, I2, M>
     where
-        I2: IntoInit<'b, Self::Target, M, Error: Into<Self::Error>>,
+        I2: IntoInit<'b, T, M, Error: Into<Self::Error>>,
     {
         or(self, other)
     }
@@ -187,7 +182,7 @@ pub trait InitPin<'b>: Sized {
     fn or_else<F, I2>(self, f: F) -> OrElse<Self, F>
     where
         F: FnOnce(Self::Error) -> I2,
-        I2: InitPin<'b, Target = Self::Target, Error: Into<Self::Error>>,
+        I2: InitPin<'b, T, Error: Into<Self::Error>>,
     {
         or_else(self, f)
     }
@@ -247,10 +242,7 @@ impl<'a, T: ?Sized, E: fmt::Debug> fmt::Debug for InitError<'a, T, E> {
 /// The result type for [initialization].
 ///
 /// [initialization]: crate::init::Init::init
-pub type InitResult<'a, I> = Result<
-    Own<'a, <I as InitPin<'a>>::Target>,
-    InitError<'a, <I as InitPin<'a>>::Target, <I as InitPin<'a>>::Error>,
->;
+pub type InitResult<'a, T, E> = Result<Own<'a, T>, InitError<'a, T, E>>;
 
 /// A trait for initializing a place with a value.
 ///
@@ -263,7 +255,7 @@ pub type InitResult<'a, I> = Result<
 /// the same restrictions regarding partially-initialized states. This is
 /// because the values initialized through this trait are not pinned, and thus
 /// do not have the same safety guarantees that pinned values require.
-pub trait Init<'b>: InitPin<'b> {
+pub trait Init<'b, T: ?Sized>: InitPin<'b, T> {
     /// Initializes a place with a value.
     ///
     /// This method performs the actual initialization of an uninitialized
@@ -280,7 +272,7 @@ pub trait Init<'b>: InitPin<'b> {
     /// containing the error and the failed place.
     ///
     /// [owned reference]: crate::Own
-    fn init(self, place: Uninit<'b, Self::Target>) -> InitResult<'b, Self>;
+    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, T, Self::Error>;
 
     /// Chains a closure to execute after successful initialization.
     ///
@@ -296,9 +288,9 @@ pub trait Init<'b>: InitPin<'b> {
     /// let owned: Own<Vec<_>> = own!(value(vec![1, 2, 3]).and(|v| v.push(4)));
     /// assert_eq!(*owned, vec![1, 2, 3, 4]);
     /// ```
-    fn and<F: FnOnce(&mut Self::Target)>(self, f: F) -> And<Self, F>
+    fn and<F: FnOnce(&mut T)>(self, f: F) -> And<Self, F>
     where
-        Self::Target: Unpin,
+        T: Unpin,
     {
         and(self, f)
     }
@@ -310,7 +302,7 @@ pub trait Init<'b>: InitPin<'b> {
 /// without needing to wrap them in a specific initializer factory function.
 pub trait IntoInit<'b, T: ?Sized, Marker = ()>: Sized {
     /// Which kind of initializer this converts into?
-    type Init: InitPin<'b, Target = T, Error = Self::Error>;
+    type Init: InitPin<'b, T, Error = Self::Error>;
     /// The error type that can occur during initialization.
     type Error;
 
@@ -318,7 +310,7 @@ pub trait IntoInit<'b, T: ?Sized, Marker = ()>: Sized {
     fn into_init(self) -> Self::Init;
 }
 
-impl<'b, I: InitPin<'b>> IntoInit<'b, I::Target> for I {
+impl<'b, I: InitPin<'b, T>, T: ?Sized> IntoInit<'b, T> for I {
     type Init = I;
     type Error = I::Error;
 

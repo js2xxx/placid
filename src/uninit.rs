@@ -281,7 +281,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// ```
     pub fn write<I, Marker>(self, init: I) -> Own<'a, T>
     where
-        I: IntoInit<'a, T, Marker, Init: Init<'a>, Error: fmt::Debug>,
+        I: IntoInit<'a, T, Marker, Init: Init<'a, T>, Error: fmt::Debug>,
     {
         self.try_write(init).unwrap()
     }
@@ -300,9 +300,9 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// let result = uninit.try_write(42);
     /// assert!(result.is_ok());
     /// ```
-    pub fn try_write<I, Marker>(self, init: I) -> InitResult<'a, I::Init>
+    pub fn try_write<I, Marker>(self, init: I) -> InitResult<'a, T, I::Error>
     where
-        I: IntoInit<'a, T, Marker, Init: Init<'a>>,
+        I: IntoInit<'a, T, Marker, Init: Init<'a, T>>,
     {
         init.into_init().init(self)
     }
@@ -349,7 +349,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
         self,
         init: I,
         slot: DropSlot<'a, 'b, T>,
-    ) -> InitPinResult<'a, 'b, I::Init>
+    ) -> InitPinResult<'a, 'b, T, I::Error>
     where
         I: IntoInit<'b, T, Marker>,
     {

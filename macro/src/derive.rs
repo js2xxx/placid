@@ -288,7 +288,9 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
         let init_bound = if pinned {
             quote_spanned! { mixed_site => }
         } else {
-            quote_spanned! { mixed_site => Init: ::placid::init::Init<#this_lifetime>, }
+            quote_spanned! { mixed_site =>
+                Init: ::placid::init::Init<#this_lifetime, #ty>,
+            }
         };
 
         let slot_creation = pin_lifetime.as_ref().map(|pin_lifetime| {

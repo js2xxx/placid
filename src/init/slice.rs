@@ -61,15 +61,14 @@ impl<T: Copy> SpecInitSlice<T> for &[T] {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Slice<'a, T>(&'a [T]);
 
-impl<'b, T: Clone> InitPin<'b> for Slice<'_, T> {
-    type Target = [T];
+impl<'b, T: Clone> InitPin<'b, [T]> for Slice<'_, T> {
     type Error = SliceError;
 
     fn init_pin<'a>(
         self,
         place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
-    ) -> InitPinResult<'a, 'b, Self> {
+    ) -> InitPinResult<'a, 'b, [T], SliceError> {
         match self.0.init_slice(place) {
             Ok(own) => Ok(Own::into_pin(own, slot)),
             Err(err) => Err(err.into_pin(slot)),
@@ -77,8 +76,8 @@ impl<'b, T: Clone> InitPin<'b> for Slice<'_, T> {
     }
 }
 
-impl<'b, T: Clone> Init<'b> for Slice<'_, T> {
-    fn init(self, place: Uninit<'b, [T]>) -> InitResult<'b, Self> {
+impl<'b, T: Clone> Init<'b, [T]> for Slice<'_, T> {
+    fn init(self, place: Uninit<'b, [T]>) -> InitResult<'b, [T], SliceError> {
         self.0.init_slice(place)
     }
 }
@@ -135,15 +134,14 @@ impl<'a, 'b, T: Clone> IntoInit<'b, [T], Slice<'a, T>> for &'a [T] {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Str<'a>(&'a str);
 
-impl<'b> InitPin<'b> for Str<'_> {
-    type Target = str;
+impl<'b> InitPin<'b, str> for Str<'_> {
     type Error = SliceError;
 
     fn init_pin<'a>(
         self,
         mut place: Uninit<'a, str>,
         slot: DropSlot<'a, 'b, str>,
-    ) -> InitPinResult<'a, 'b, Self> {
+    ) -> InitPinResult<'a, 'b, str, SliceError> {
         if place.len() != self.0.len() {
             return Err(InitError { error: SliceError, place }.into_pin(slot));
         }
@@ -155,8 +153,8 @@ impl<'b> InitPin<'b> for Str<'_> {
     }
 }
 
-impl<'b> Init<'b> for Str<'_> {
-    fn init(self, mut place: Uninit<'b, str>) -> InitResult<'b, Self> {
+impl<'b> Init<'b, str> for Str<'_> {
+    fn init(self, mut place: Uninit<'b, str>) -> InitResult<'b, str, SliceError> {
         if place.len() != self.0.len() {
             return Err(InitError { error: SliceError, place });
         }
@@ -207,23 +205,22 @@ impl<'a, 'b> IntoInit<'a, str, Str<'b>> for &'b str {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Repeat<T>(T);
 
-impl<'b, T: Clone> InitPin<'b> for Repeat<T> {
-    type Target = [T];
+impl<'b, T: Clone> InitPin<'b, [T]> for Repeat<T> {
     type Error = Infallible;
 
     fn init_pin<'a>(
         self,
         mut place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
-    ) -> InitPinResult<'a, 'b, Self> {
+    ) -> InitPinResult<'a, 'b, [T], Infallible> {
         place.write_filled(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init_pin(slot) })
     }
 }
 
-impl<'b, T: Clone> Init<'b> for Repeat<T> {
-    fn init(self, mut place: Uninit<'b, [T]>) -> InitResult<'b, Self> {
+impl<'b, T: Clone> Init<'b, [T]> for Repeat<T> {
+    fn init(self, mut place: Uninit<'b, [T]>) -> InitResult<'b, [T], Infallible> {
         place.write_filled(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
@@ -255,29 +252,28 @@ pub const fn repeat<T: Clone>(value: T) -> Repeat<T> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RepeatWith<F>(F);
 
-impl<'b, T, F> InitPin<'b> for RepeatWith<F>
+impl<'b, T, F> InitPin<'b, [T]> for RepeatWith<F>
 where
     F: Fn(usize) -> T,
 {
-    type Target = [T];
     type Error = Infallible;
 
     fn init_pin<'a>(
         self,
         mut place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
-    ) -> InitPinResult<'a, 'b, Self> {
+    ) -> InitPinResult<'a, 'b, [T], Infallible> {
         place.write_with(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init_pin(slot) })
     }
 }
 
-impl<'b, T, F> Init<'b> for RepeatWith<F>
+impl<'b, T, F> Init<'b, [T]> for RepeatWith<F>
 where
     F: Fn(usize) -> T,
 {
-    fn init(self, mut place: Uninit<'b, [T]>) -> InitResult<'b, Self> {
+    fn init(self, mut place: Uninit<'b, [T]>) -> InitResult<'b, [T], Infallible> {
         place.write_with(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })

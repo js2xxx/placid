@@ -18,23 +18,32 @@ pub struct And<I, F> {
     f: F,
 }
 
-impl<'b, I: Init<'b, Target: Unpin>, F: FnOnce(&mut I::Target)> InitPin<'b> for And<I, F> {
-    type Target = I::Target;
+impl<'b, T, I, F> InitPin<'b, T> for And<I, F>
+where
+    T: ?Sized + Unpin,
+    I: Init<'b, T>,
+    F: FnOnce(&mut T),
+{
     type Error = I::Error;
 
     fn init_pin<'a>(
         self,
-        place: Uninit<'a, Self::Target>,
-        slot: DropSlot<'a, 'b, Self::Target>,
-    ) -> InitPinResult<'a, 'b, Self> {
+        place: Uninit<'a, T>,
+        slot: DropSlot<'a, 'b, T>,
+    ) -> InitPinResult<'a, 'b, T, I::Error> {
         let mut own = self.init.init_pin(place, slot)?;
         (self.f)(&mut *own);
         Ok(own)
     }
 }
 
-impl<'b, I: Init<'b, Target: Unpin>, F: FnOnce(&mut I::Target)> Init<'b> for And<I, F> {
-    fn init(self, place: Uninit<'b, I::Target>) -> InitResult<'b, Self> {
+impl<'b, T, I, F> Init<'b, T> for And<I, F>
+where
+    T: ?Sized + Unpin,
+    I: Init<'b, T>,
+    F: FnOnce(&mut T),
+{
+    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, T, I::Error> {
         let mut own = self.init.init(place)?;
         (self.f)(&mut *own);
         Ok(own)
@@ -71,15 +80,19 @@ pub struct AndPin<I, F> {
     f: F,
 }
 
-impl<'b, I: InitPin<'b>, F: FnOnce(Pin<&mut I::Target>)> InitPin<'b> for AndPin<I, F> {
-    type Target = I::Target;
+impl<'b, T, I, F> InitPin<'b, T> for AndPin<I, F>
+where
+    T: ?Sized,
+    I: InitPin<'b, T>,
+    F: FnOnce(Pin<&mut T>),
+{
     type Error = I::Error;
 
     fn init_pin<'a>(
         self,
-        place: Uninit<'a, Self::Target>,
-        slot: DropSlot<'a, 'b, Self::Target>,
-    ) -> InitPinResult<'a, 'b, Self> {
+        place: Uninit<'a, T>,
+        slot: DropSlot<'a, 'b, T>,
+    ) -> InitPinResult<'a, 'b, T, I::Error> {
         let mut own = self.init.init_pin(place, slot)?;
         (self.f)(own.as_mut());
         Ok(own)

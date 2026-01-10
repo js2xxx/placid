@@ -91,7 +91,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn write<'b, M, I>(&'b mut self, init: I) -> Own<'b, T>
     where
-        I: IntoInit<'b, T, M, Init: Init<'b>, Error: fmt::Debug>,
+        I: IntoInit<'b, T, M, Init: Init<'b, T>, Error: fmt::Debug>,
     {
         Uninit::from_mut(self).write(init)
     }
@@ -144,7 +144,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn init<M, I, E>(self, init: I) -> Self::Init
     where
-        I: for<'b> IntoInit<'b, T, M, Init: Init<'b>, Error = E>,
+        I: for<'b> IntoInit<'b, T, M, Init: Init<'b, T>, Error = E>,
         E: fmt::Debug,
     {
         self.try_init(init).map_err(|(e, _)| e).unwrap()
@@ -181,7 +181,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn try_init<M, I, E>(mut self, init: I) -> Result<Self::Init, (E, Self)>
     where
-        I: for<'b> IntoInit<'b, T, M, Init: Init<'b>, Error = E>,
+        I: for<'b> IntoInit<'b, T, M, Init: Init<'b, T>, Error = E>,
     {
         'ok: {
             let err = match Uninit::from_mut(&mut self).try_write(init) {
@@ -308,7 +308,7 @@ pub trait Placed {
     fn init<P, M, I, E>(place: P, init: I) -> P::Init
     where
         P: Place<Self>,
-        I: for<'b> IntoInit<'b, Self, M, Init: Init<'b>, Error = E>,
+        I: for<'b> IntoInit<'b, Self, M, Init: Init<'b, Self>, Error = E>,
         E: fmt::Debug,
     {
         place.init(init)
@@ -340,7 +340,7 @@ pub trait Placed {
     fn try_init<P, M, I, E>(place: P, init: I) -> Result<P::Init, (E, P)>
     where
         P: Place<Self>,
-        I: for<'b> IntoInit<'b, Self, M, Init: Init<'b>, Error = E>,
+        I: for<'b> IntoInit<'b, Self, M, Init: Init<'b, Self>, Error = E>,
     {
         place.try_init(init)
     }

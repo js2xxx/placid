@@ -17,19 +17,18 @@ pub struct Or<I1, I2, M> {
     marker: PhantomData<M>,
 }
 
-impl<'b, I1, M, I2> InitPin<'b> for Or<I1, I2, M>
+impl<'b, T: ?Sized, I1, M, I2> InitPin<'b, T> for Or<I1, I2, M>
 where
-    I1: InitPin<'b>,
-    I2: IntoInit<'b, I1::Target, M, Error: Into<I1::Error>>,
+    I1: InitPin<'b, T>,
+    I2: IntoInit<'b, T, M, Error: Into<I1::Error>>,
 {
-    type Target = I1::Target;
     type Error = I1::Error;
 
     fn init_pin<'a>(
         self,
-        place: Uninit<'a, Self::Target>,
-        slot: DropSlot<'a, 'b, Self::Target>,
-    ) -> InitPinResult<'a, 'b, Self> {
+        place: Uninit<'a, T>,
+        slot: DropSlot<'a, 'b, T>,
+    ) -> InitPinResult<'a, 'b, T, I1::Error> {
         match self.init1.init_pin(place, slot) {
             Ok(own) => Ok(own),
             Err(err) => (self.init2.into_init())
@@ -39,12 +38,12 @@ where
     }
 }
 
-impl<'b, I1, M, I2> Init<'b> for Or<I1, I2, M>
+impl<'b, T: ?Sized, I1, M, I2> Init<'b, T> for Or<I1, I2, M>
 where
-    I1: Init<'b>,
-    I2: IntoInit<'b, I1::Target, M, Init: Init<'b>, Error: Into<I1::Error>>,
+    I1: Init<'b, T>,
+    I2: IntoInit<'b, T, M, Init: Init<'b, T>, Error: Into<I1::Error>>,
 {
-    fn init(self, place: Uninit<'b, Self::Target>) -> InitResult<'b, Self> {
+    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, T, I1::Error> {
         match self.init1.init(place) {
             Ok(own) => Ok(own),
             Err(err) => (self.init2.into_init())
@@ -67,10 +66,10 @@ where
 /// let failed: Own<u32> = own!(or(try_with(|| u32::try_from(-1i32)), 30u32));
 /// assert_eq!(*failed, 30);
 /// ```
-pub fn or<'b, I1, I2, M2>(init1: I1, init2: I2) -> Or<I1, I2, M2>
+pub fn or<'b, T: ?Sized, I1, I2, M2>(init1: I1, init2: I2) -> Or<I1, I2, M2>
 where
-    I1: InitPin<'b>,
-    I2: IntoInit<'b, I1::Target, M2, Error: Into<I1::Error>>,
+    I1: InitPin<'b, T>,
+    I2: IntoInit<'b, T, M2, Error: Into<I1::Error>>,
 {
     Or {
         init1,
@@ -89,19 +88,18 @@ pub struct OrElse<I, F> {
     f: F,
 }
 
-impl<'b, I1: InitPin<'b>, F, I2> InitPin<'b> for OrElse<I1, F>
+impl<'b, T: ?Sized, I1: InitPin<'b, T>, F, I2> InitPin<'b, T> for OrElse<I1, F>
 where
     F: FnOnce(I1::Error) -> I2,
-    I2: InitPin<'b, Target = I1::Target, Error: Into<I1::Error>>,
+    I2: InitPin<'b, T, Error: Into<I1::Error>>,
 {
-    type Target = I1::Target;
     type Error = I1::Error;
 
     fn init_pin<'a>(
         self,
-        place: Uninit<'a, Self::Target>,
-        slot: DropSlot<'a, 'b, Self::Target>,
-    ) -> InitPinResult<'a, 'b, Self> {
+        place: Uninit<'a, T>,
+        slot: DropSlot<'a, 'b, T>,
+    ) -> InitPinResult<'a, 'b, T, I1::Error> {
         match self.init1.init_pin(place, slot) {
             Ok(own) => Ok(own),
             Err(err) => (self.f)(err.error)
@@ -111,12 +109,12 @@ where
     }
 }
 
-impl<'b, I1: Init<'b>, F, I2> Init<'b> for OrElse<I1, F>
+impl<'b, T: ?Sized, I1: Init<'b, T>, F, I2> Init<'b, T> for OrElse<I1, F>
 where
     F: FnOnce(I1::Error) -> I2,
-    I2: Init<'b, Target = I1::Target, Error: Into<I1::Error>>,
+    I2: Init<'b, T, Error: Into<I1::Error>>,
 {
-    fn init(self, place: Uninit<'b, Self::Target>) -> InitResult<'b, Self> {
+    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, T, I1::Error> {
         match self.init1.init(place) {
             Ok(own) => Ok(own),
             Err(err) => (self.f)(err.error)
@@ -139,10 +137,11 @@ where
 /// }));
 /// assert_eq!(*owned, 42);
 /// ```
-pub const fn or_else<'b, I1, F, I2>(init1: I1, f: F) -> OrElse<I1, F>
+pub const fn or_else<'b, T: ?Sized, I1, F, I2>(init1: I1, f: F) -> OrElse<I1, F>
 where
-    I1: InitPin<'b>,
+    I1: InitPin<'b, T>,
     F: FnOnce(I1::Error) -> I2,
+    I2: InitPin<'b, T, Error: Into<I1::Error>>,
 {
     OrElse { init1, f }
 }
