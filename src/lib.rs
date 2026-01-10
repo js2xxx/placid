@@ -1,4 +1,4 @@
-//! # `placid` - separated ownership and in-place construction
+//! # `placid` - Separated ownership and in-place construction
 //!
 //! `placid` extends Rust's ownership model with owned and uninit references
 //! with pinning variants (semantically [`&own T`], [`&uninit T`], and [`&pin
@@ -263,6 +263,7 @@
 #![feature(min_specialization)]
 #![feature(ptr_metadata)]
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 #[cfg(test)]
@@ -470,3 +471,7 @@ pub use placid_macro::init;
 ///
 /// [structurally pin-initialized]: macro@crate::InitPin
 pub use placid_macro::init_pin;
+
+#[cfg(not(doc))]
+#[doc = include_str!("../README.md")]
+mod _readme {}

@@ -3,22 +3,38 @@ members = ["macro"]
 resolver = "3"
 
 [workspace.package]
+authors = ["Js2xxx <development2014@outlook.com>"]
+categories = ["no-std", "rust-patterns"]
+description = "Separated ownership and in-place construction in Rust"
+documentation = "https://docs.rs/placid"
 edition = "2024"
+keywords = ["ownership", "pin", "macros", "place"]
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/js2xxx/placid"
 version = "0.1.0"
 
 [package]
+authors.workspace = true
+categories.workspace = true
+description.workspace = true
+documentation.workspace = true
 edition.workspace = true
+keywords.workspace = true
 license.workspace = true
 name = "placid"
+repository.workspace = true
 version.workspace = true
 
+[package.metadata.docs.rs]
+all-features = true
+
 [features]
+alloc = []
 default = ["fn-impl"]
-fn-impl = []
+fn-impl = ["alloc"]
 
 [dependencies]
 # Local crates
-placid-macro = {path = "macro"}
+placid-macro = {version = "=0.1.0", path = "macro"}
 # External crates
 thiserror = {version = "2.0", default-features = false}

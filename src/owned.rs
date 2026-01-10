@@ -14,15 +14,17 @@
 //! [`IntoOwn`]: crate::owned::IntoOwn
 //! [`into_own!`]: crate::into_own
 
+#[cfg(feature = "alloc")]
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
+#[cfg(feature = "alloc")]
+use core::{alloc::Allocator, mem::MaybeUninit};
 use core::{
-    alloc::Allocator,
     any::Any,
     borrow::{Borrow, BorrowMut},
     error::Error,
     fmt,
     hash::{Hash, Hasher},
-    mem::{self, MaybeUninit},
+    mem,
     ops::{Deref, DerefMut},
     pin::Pin,
     ptr::NonNull,
@@ -478,6 +480,7 @@ impl<'a, F: ?Sized + Future + Unpin> Future for Own<'a, F> {
     }
 }
 
+#[cfg(feature = "alloc")]
 #[allow(dead_code)]
 fn into_undrop_box<T: ?Sized>(own: Own<'_, T>) -> Box<T, impl Allocator> {
     use core::alloc::{AllocError, Allocator, Layout};
@@ -578,6 +581,7 @@ pub unsafe trait IntoOwn: Deref + Sized {
     }
 }
 
+#[cfg(feature = "alloc")]
 macro_rules! impl_std_alloc {
     (@IMP $ty:ident) => {
         unsafe impl<T, A: Allocator> IntoOwn for $ty<T, A> {
@@ -597,6 +601,7 @@ macro_rules! impl_std_alloc {
     };
 }
 
+#[cfg(feature = "alloc")]
 impl_std_alloc!(Box, Arc, Rc);
 
 /// Creates an [owned reference] from a container, extracting the contained
@@ -670,6 +675,7 @@ mod tests {
         assert_eq!(*my_place_again, 200);
     }
 
+    #[cfg(feature = "alloc")]
     #[test]
     fn test_into_own() {
         let mut my_place;

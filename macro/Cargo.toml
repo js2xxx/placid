@@ -1,7 +1,13 @@
 [package]
+authors.workspace = true
+categories.workspace = true
+description.workspace = true
+documentation.workspace = true
 edition.workspace = true
+keywords.workspace = true
 license.workspace = true
 name = "placid-macro"
+repository.workspace = true
 version.workspace = true
 
 [lib]

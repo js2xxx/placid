@@ -583,6 +583,7 @@ macro_rules! into_pown {
 }
 
 #[cfg(test)]
+#[cfg(feature = "alloc")]
 mod tests {
     use alloc::boxed::Box;
 

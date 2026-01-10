@@ -2,9 +2,11 @@
 //!
 //! See the [`Place`] trait for more details.
 
+#[cfg(feature = "alloc")]
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
+#[cfg(feature = "alloc")]
+use core::alloc::Allocator;
 use core::{
-    alloc::Allocator,
     fmt,
     marker::{CoercePointee, PhantomData},
     mem::{self, ManuallyDrop, MaybeUninit},
@@ -461,6 +463,7 @@ where
     }
 }
 
+#[cfg(feature = "alloc")]
 macro_rules! std_alloc_places {
     (@get_mut $this:ident, $ty:ident) => {
         $ty::get_mut($this).unwrap()
@@ -552,6 +555,7 @@ macro_rules! std_alloc_places {
     };
 }
 
+#[cfg(feature = "alloc")]
 std_alloc_places! {
     Box mut,
     Rc,
@@ -636,6 +640,7 @@ unsafe impl<'a, #[may_dangle] T: ?Sized, S: PlaceState> Drop for PlaceRef<'a, T,
 }
 
 #[cfg(test)]
+#[cfg(feature = "alloc")]
 mod tests {
     use super::*;
 
