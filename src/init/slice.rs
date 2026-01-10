@@ -9,6 +9,11 @@ use crate::{
     pin::DropSlot,
 };
 
+#[inline]
+fn maybe_uninit_slice<T, const N: usize>(m: &mut MaybeUninit<[T; N]>) -> &mut [MaybeUninit<T>] {
+    unsafe { &mut *(m.as_mut_ptr() as *mut [MaybeUninit<T>; N]) }
+}
+
 /// Error type for slice initialization failures.
 ///
 /// This structure is returned from slice initializers when the source and
@@ -18,17 +23,16 @@ use crate::{
 pub struct SliceError;
 
 trait SpecInitSlice<T> {
-    fn init_slice(
+    fn init_slice(self, place: Uninit<'_, [T]>) -> InitResult<'_, [T], SliceError>;
+
+    fn init_array<const N: usize>(
         self,
-        place: Uninit<'_, [T]>,
-    ) -> Result<Own<'_, [T]>, InitError<'_, [T], SliceError>>;
+        place: Uninit<'_, [T; N]>,
+    ) -> InitResult<'_, [T; N], SliceError>;
 }
 
 impl<T: Clone> SpecInitSlice<T> for &[T] {
-    default fn init_slice(
-        self,
-        mut place: Uninit<'_, [T]>,
-    ) -> Result<Own<'_, [T]>, InitError<'_, [T], SliceError>> {
+    default fn init_slice(self, mut place: Uninit<'_, [T]>) -> InitResult<'_, [T], SliceError> {
         if place.len() != self.len() {
             return Err(InitError { error: SliceError, place });
         }
@@ -37,18 +41,41 @@ impl<T: Clone> SpecInitSlice<T> for &[T] {
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
     }
+
+    default fn init_array<const N: usize>(
+        self,
+        mut place: Uninit<'_, [T; N]>,
+    ) -> InitResult<'_, [T; N], SliceError> {
+        if N != self.len() {
+            return Err(InitError { error: SliceError, place });
+        }
+
+        maybe_uninit_slice(&mut place).write_clone_of_slice(self);
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init() })
+    }
 }
 
 impl<T: Copy> SpecInitSlice<T> for &[T] {
-    fn init_slice(
-        self,
-        mut place: Uninit<'_, [T]>,
-    ) -> Result<Own<'_, [T]>, InitError<'_, [T], SliceError>> {
+    fn init_slice(self, mut place: Uninit<'_, [T]>) -> InitResult<'_, [T], SliceError> {
         if place.len() != self.len() {
             return Err(InitError { error: SliceError, place });
         }
 
         place.write_copy_of_slice(self);
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init() })
+    }
+
+    fn init_array<const N: usize>(
+        self,
+        mut place: Uninit<'_, [T; N]>,
+    ) -> InitResult<'_, [T; N], SliceError> {
+        if N != self.len() {
+            return Err(InitError { error: SliceError, place });
+        }
+
+        maybe_uninit_slice(&mut place).write_copy_of_slice(self);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
     }
@@ -82,6 +109,27 @@ impl<'b, T: Clone> Init<'b, [T]> for Slice<'_, T> {
     }
 }
 
+impl<'b, T: Clone, const N: usize> InitPin<'b, [T; N]> for Slice<'_, T> {
+    type Error = SliceError;
+
+    fn init_pin<'a>(
+        self,
+        place: Uninit<'a, [T; N]>,
+        slot: DropSlot<'a, 'b, [T; N]>,
+    ) -> InitPinResult<'a, 'b, [T; N], SliceError> {
+        match self.0.init_array(place) {
+            Ok(own) => Ok(Own::into_pin(own, slot)),
+            Err(err) => Err(err.into_pin(slot)),
+        }
+    }
+}
+
+impl<'b, T: Clone, const N: usize> Init<'b, [T; N]> for Slice<'_, T> {
+    fn init(self, place: Uninit<'b, [T; N]>) -> InitResult<'b, [T; N], SliceError> {
+        self.0.init_array(place)
+    }
+}
+
 /// Initializes a slice by copying or cloning elements from a source slice.
 ///
 /// This is used to initialize a pre-allocated slice by copying (for `Copy`
@@ -101,7 +149,7 @@ impl<'b, T: Clone> Init<'b, [T]> for Slice<'_, T> {
 ///
 /// // Initialize a slice with integers
 /// let source = [1, 2, 3, 4, 5];
-/// let mut uninit: Uninit<[i32]> = uninit!([i32; 5]);
+/// let mut uninit = uninit!([i32; 5]);
 /// let owned = uninit.write(&source[..]);
 /// assert_eq!(&*owned, &[1, 2, 3, 4, 5]);
 /// ```
@@ -111,7 +159,7 @@ impl<'b, T: Clone> Init<'b, [T]> for Slice<'_, T> {
 /// use placid::{uninit, Uninit};
 ///
 /// let source = [1, 2, 3];
-/// let mut uninit: Uninit<[i32]> = uninit!([i32; 5]); // Different size
+/// let mut uninit = uninit!([i32; 5]); // Different size
 /// let result = uninit.try_write(&source[..]);
 /// assert!(result.is_err()); // Fails because lengths don't match
 /// ```
@@ -120,6 +168,15 @@ pub const fn slice<T: Clone>(s: &[T]) -> Slice<'_, T> {
 }
 
 impl<'a, 'b, T: Clone> IntoInit<'b, [T], Slice<'a, T>> for &'a [T] {
+    type Init = Slice<'a, T>;
+    type Error = SliceError;
+
+    fn into_init(self) -> Self::Init {
+        Slice(self)
+    }
+}
+
+impl<'a, 'b, T: Clone, const N: usize> IntoInit<'b, [T; N], Slice<'a, T>> for &'a [T] {
     type Init = Slice<'a, T>;
     type Error = SliceError;
 
@@ -227,6 +284,28 @@ impl<'b, T: Clone> Init<'b, [T]> for Repeat<T> {
     }
 }
 
+impl<'b, T: Clone, const N: usize> InitPin<'b, [T; N]> for Repeat<T> {
+    type Error = Infallible;
+
+    fn init_pin<'a>(
+        self,
+        mut place: Uninit<'a, [T; N]>,
+        slot: DropSlot<'a, 'b, [T; N]>,
+    ) -> InitPinResult<'a, 'b, [T; N], Infallible> {
+        maybe_uninit_slice(&mut place).write_filled(self.0);
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init_pin(slot) })
+    }
+}
+
+impl<'b, T: Clone, const N: usize> Init<'b, [T; N]> for Repeat<T> {
+    fn init(self, mut place: Uninit<'b, [T; N]>) -> InitResult<'b, [T; N], Infallible> {
+        maybe_uninit_slice(&mut place).write_filled(self.0);
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init() })
+    }
+}
+
 /// Initializes all elements of a slice with a single repeated value.
 ///
 /// This is used to initialize a slice where all elements are the same
@@ -234,11 +313,12 @@ impl<'b, T: Clone> Init<'b, [T]> for Repeat<T> {
 ///
 /// # Examples
 ///
-/// Filling a slice with a repeated value:
+/// Filling an array with a repeated value:
+///
 /// ```rust
 /// use placid::{uninit, Uninit, init::repeat};
 ///
-/// let place: Uninit<[i32]> = uninit!([i32; 3]);
+/// let place = uninit!([i32; 3]);
 /// let owned = place.write(repeat(5));
 /// assert_eq!(*owned, [5, 5, 5]);
 /// ```
@@ -280,6 +360,34 @@ where
     }
 }
 
+impl<'b, T, F, const N: usize> InitPin<'b, [T; N]> for RepeatWith<F>
+where
+    F: Fn(usize) -> T,
+{
+    type Error = Infallible;
+
+    fn init_pin<'a>(
+        self,
+        mut place: Uninit<'a, [T; N]>,
+        slot: DropSlot<'a, 'b, [T; N]>,
+    ) -> InitPinResult<'a, 'b, [T; N], Infallible> {
+        maybe_uninit_slice(&mut place).write_with(self.0);
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init_pin(slot) })
+    }
+}
+
+impl<'b, T, F, const N: usize> Init<'b, [T; N]> for RepeatWith<F>
+where
+    F: Fn(usize) -> T,
+{
+    fn init(self, mut place: Uninit<'b, [T; N]>) -> InitResult<'b, [T; N], Infallible> {
+        maybe_uninit_slice(&mut place).write_with(self.0);
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init() })
+    }
+}
+
 /// Initializes a slice by calling a closure for each element.
 ///
 /// `RepeatWith` allows you to initialize a slice where each element is produced
@@ -288,11 +396,11 @@ where
 ///
 /// # Examples
 ///
-/// Creating a slice of indices:
+/// Creating an array of indices:
 /// ```rust
 /// use placid::{uninit, Uninit, init::repeat_with};
 ///
-/// let mut uninit: Uninit<[usize]> = uninit!([usize; 5]);
+/// let mut uninit = uninit!([usize; 5]);
 /// let owned = uninit.write(repeat_with(|i| i * 2));
 /// assert_eq!(&*owned, &[0, 2, 4, 6, 8]);
 /// ```

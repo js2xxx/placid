@@ -321,7 +321,7 @@ impl<'b, I: InitPin<'b, T>, T: ?Sized> IntoInit<'b, T> for I {
 
 /// Types that can be structurally initialized in a pinned place.
 ///
-/// This trait is automatically implemented for types that derive `InitPin`.
+/// This trait is automatically implemented for types that derive [`InitPin`].
 /// It provides a method to structurally initialize the type in a pinned
 /// context.
 ///
@@ -329,6 +329,8 @@ impl<'b, I: InitPin<'b, T>, T: ?Sized> IntoInit<'b, T> for I {
 ///
 /// Users should not implement this trait manually. It is intended to be
 /// automatically derived to ensure correct behavior.
+///
+/// [`InitPin`]: macro@crate::InitPin
 pub unsafe trait StructuralInitPin<'b>: Sized {
     #[doc(hidden)]
     type InitPin<'a: 'b>
@@ -343,7 +345,7 @@ pub unsafe trait StructuralInitPin<'b>: Sized {
 
 /// Types that can be structurally initialized in a place.
 ///
-/// This trait is automatically implemented for types that derive `Init`. It
+/// This trait is automatically implemented for types that derive [`Init`]. It
 /// provides a method to structurally initialize the type in a non-pinned
 /// context.
 ///
@@ -351,6 +353,8 @@ pub unsafe trait StructuralInitPin<'b>: Sized {
 ///
 /// Users should not implement this trait manually. It is intended to be
 /// automatically derived to ensure correct behavior.
+///
+/// [`Init`]: macro@crate::Init
 pub unsafe trait StructuralInit<'b>: Sized {
     #[doc(hidden)]
     type Init;

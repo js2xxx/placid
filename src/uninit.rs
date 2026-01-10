@@ -57,14 +57,14 @@ impl<'a, T> Deref for Uninit<'a, T> {
 
     fn deref(&self) -> &Self::Target {
         // SAFETY: We are treating the place as uninitialized.
-        unsafe { self.inner.as_uninit_ref() }
+        unsafe { self.inner.cast().as_ref() }
     }
 }
 
 impl<'a, T> DerefMut for Uninit<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: We are treating the place as uninitialized.
-        unsafe { self.inner.as_uninit_mut() }
+        unsafe { self.inner.cast().as_mut() }
     }
 }
 

@@ -562,7 +562,7 @@ mod fn_impl;
 /// [owned]: crate::Own
 /// [`into_own!`]: crate::into_own!
 /// [`into_pown!`]: crate::into_pown!
-pub unsafe trait IntoOwn: Deref {
+pub unsafe trait IntoOwn: Deref + Sized {
     /// The type of place associated with this container.
     type Place: Place<Self::Target, Init = Self>;
 
