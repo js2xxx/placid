@@ -140,9 +140,12 @@ impl VisitMut for InitVisit {
                 for expr in &mut call.args {
                     self.visit_root_expr_mut(expr, true);
 
-                    builder_segment.push(if self.err.is_some() {
+                    builder_segment.push(if self.err_ty.is_some() {
                         quote_spanned! { span =>
-                            let builder = builder.__next(#expr)?;
+                            let builder = match builder.__next(#expr) {
+                                Ok(v) => v,
+                                Err(err) => return Err(err.map(Into::into)),
+                            };
                         }
                     } else {
                         quote_spanned! { span =>
@@ -166,9 +169,12 @@ impl VisitMut for InitVisit {
                     let attrs = self.scan_attribute(&mut field.attrs, true);
                     self.visit_inner_expr_mut(expr, attrs);
 
-                    builder_segment.push(if self.err.is_some() {
+                    builder_segment.push(if self.err_ty.is_some() {
                         quote_spanned! { span =>
-                            let builder = builder.#member(#expr)?;
+                            let builder = match builder.#member(#expr) {
+                                Ok(v) => v,
+                                Err(err) => return Err(err.map(Into::into)),
+                            };
                         }
                     } else {
                         quote_spanned! { span =>
@@ -185,9 +191,9 @@ impl VisitMut for InitVisit {
         };
 
         let generics = if let Some(err) = &self.err_ty {
-            quote_spanned! { span => ::<#path, #err, _> }
+            quote_spanned! { span => ::<_, #err, _> }
         } else {
-            quote_spanned! { span => ::<#path, _, _> }
+            quote_spanned! { span => ::<_, _, _> }
         };
 
         *expr = if self.pinned {
@@ -195,7 +201,7 @@ impl VisitMut for InitVisit {
                 #(#attrs)*
                 ::placid::init::try_raw_pin #generics(move |uninit, slot| {
                     use ::placid::init::StructuralInitPin;
-                    let builder = <#path as StructuralInitPin>::init_pin(uninit, slot);
+                    let builder = #path::__builder_init_pin(uninit, slot);
                     #(#builder_segment)*
                     Ok(builder.build())
                 })
@@ -205,7 +211,7 @@ impl VisitMut for InitVisit {
                 #(#attrs)*
                 ::placid::init::try_raw #generics(move |uninit| {
                     use ::placid::init::StructuralInit;
-                    let builder = <#path as StructuralInit>::init(uninit);
+                    let builder = #path::__builder_init(uninit);
                     #(#builder_segment)*
                     Ok(builder.build())
                 })

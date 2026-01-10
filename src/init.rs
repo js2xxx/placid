@@ -26,6 +26,11 @@ pub struct InitPinError<'a, 'b, T: ?Sized, E> {
 }
 
 impl<'a, 'b, T: ?Sized, E> InitPinError<'a, 'b, T, E> {
+    /// Creates a new `InitPinError`.
+    pub const fn new(error: E, place: Uninit<'a, T>, slot: DropSlot<'a, 'b, T>) -> Self {
+        InitPinError { error, place, slot }
+    }
+
     /// Maps the error contained in this `InitPinError` to a different error
     /// type.
     pub fn map<F, E2>(self, f: F) -> InitPinError<'a, 'b, T, E2>
@@ -204,6 +209,11 @@ pub struct InitError<'a, T: ?Sized, E> {
 }
 
 impl<'a, T: ?Sized, E> InitError<'a, T, E> {
+    /// Creates a new `InitError`.
+    pub const fn new(error: E, place: Uninit<'a, T>) -> Self {
+        InitError { error, place }
+    }
+
     /// Converts this error into an `InitPinError` by adding a drop slot.
     pub fn into_pin<'b>(self, slot: DropSlot<'a, 'b, T>) -> InitPinError<'a, 'b, T, E> {
         InitPinError {
@@ -346,14 +356,14 @@ impl<I: InitPin<T>, T: ?Sized> IntoInit<T> for I {
     label = "`{Self}` cannot be structurally pin-initialized",
     note = "`#[derive(InitPin)]` to enable structural pin-initialization for this type"
 )]
-pub trait StructuralInitPin<'b>: Sized {
+pub trait StructuralInitPin<'b> {
     #[doc(hidden)]
-    type InitPin<'a: 'b>
+    type __BuilderInitPin<'a: 'b>
     where
         Self: 'a;
 
     #[doc(hidden)]
-    fn init_pin<'a>(place: Uninit<'a, Self>, slot: DropSlot<'a, 'b, Self>) -> Self::InitPin<'a>
+    fn __builder_init_pin<'a>(place: Uninit<'a, Self>, slot: DropSlot<'a, 'b, Self>) -> Self::__BuilderInitPin<'a>
     where
         Self: 'a;
 }
@@ -372,10 +382,10 @@ pub trait StructuralInitPin<'b>: Sized {
 )]
 pub trait StructuralInit<'b>: StructuralInitPin<'b> {
     #[doc(hidden)]
-    type Init;
+    type __BuilderInit;
 
     #[doc(hidden)]
-    fn init(place: Uninit<'b, Self>) -> Self::Init;
+    fn __builder_init(place: Uninit<'b, Self>) -> Self::__BuilderInit;
 }
 
 // Factory functions & adapters
@@ -396,3 +406,7 @@ pub use self::slice::{
 
 mod value;
 pub use self::value::{TryWith, Value, With, try_with, value, with};
+
+// Implemetations for the standard library types
+
+mod imp;

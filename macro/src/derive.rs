@@ -1,8 +1,8 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{
-    DeriveInput, Error, Fields, GenericParam, Generics, Lifetime, Member, Result, TraitBound,
-    TraitBoundModifier, TypeParamBound, parse_quote, punctuated::Punctuated,
+    DeriveInput, Error, Fields, GenericParam, Generics, Lifetime, Member, Result, parse_quote,
+    punctuated::Punctuated,
 };
 
 fn opt_iter<T>(v: &Option<T>) -> &[T] {
@@ -23,24 +23,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
             let mut x = x.clone();
             match &mut x {
                 GenericParam::Lifetime(_) => (),
-                GenericParam::Type(t) => {
-                    t.default = None;
-
-                    // Need to remove ?Sized bound.
-                    let bounds = std::mem::take(&mut t.bounds);
-                    t.bounds = bounds
-                        .into_iter()
-                        .filter(|b| {
-                            !matches!(
-                                b,
-                                TypeParamBound::Trait(TraitBound {
-                                    modifier: TraitBoundModifier::Maybe(_),
-                                    ..
-                                })
-                            )
-                        })
-                        .collect();
-                }
+                GenericParam::Type(t) => t.default = None,
                 GenericParam::Const(c) => c.default = None,
             }
             x
@@ -381,7 +364,8 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                     Ok(own) => {
                         ::core::mem::forget(own);
                         Ok(unsafe {
-                            ::core::mem::transmute::<
+                            let this = ::core::mem::ManuallyDrop::new(self);
+                            ::core::mem::transmute_copy::<
                                 #builder_ident<
                                     #this_lifetime,
                                     #(#pin_lifetime_q,)*
@@ -394,7 +378,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                                     #(#ty_generics,)*
                                     #typestate_ty_post
                                 >,
-                            >(self)
+                            >(&this)
                         })
                     }
                     Err(err) => Err(self.__err(err.error)),
@@ -483,15 +467,15 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
             if let Some(pin_lifetime) = &pin_lifetime {
                 (
                     quote_spanned! { mixed_site => StructuralInitPin },
-                    quote_spanned! { mixed_site => InitPin<#this_lifetime: #pin_lifetime> },
-                    quote_spanned! { mixed_site => init_pin<#this_lifetime> },
+                    quote_spanned! { mixed_site => __BuilderInitPin<#this_lifetime: #pin_lifetime> },
+                    quote_spanned! { mixed_site => __builder_init_pin<#this_lifetime> },
                     quote_spanned! { mixed_site => where Self: #this_lifetime },
                 )
             } else {
                 (
                     quote_spanned! { mixed_site => StructuralInit },
-                    quote_spanned! { mixed_site => Init },
-                    quote_spanned! { mixed_site => init },
+                    quote_spanned! { mixed_site => __BuilderInit },
+                    quote_spanned! { mixed_site => __builder_init },
                     quote_spanned! { mixed_site => },
                 )
             };
