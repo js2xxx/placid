@@ -50,6 +50,10 @@ use crate::{
 ///   inside the place.
 ///
 /// [place expressions]: https://doc.rust-lang.org/stable/reference/expressions.html#place-expressions-and-value-expressions
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a place for type `{T}`",
+    label = "`{Self}` is not a place for type `{T}`"
+)]
 pub unsafe trait Place<T: ?Sized>: Sized {
     /// The type of the place, but with an explicit initialized state.
     type Init;

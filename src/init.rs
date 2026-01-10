@@ -87,6 +87,10 @@ pub type InitPinResult<'a, 'b, T, E> = Result<POwn<'b, T>, InitPinError<'a, 'b, 
 /// resuming the panic**. On the other hand, if the initialization of `b` fails
 /// after `c` is initialized, no cleanup is necessary since `c` is not pinned
 /// and can be safely `mem::forget`ed.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a pin-initializer for places of type `{T}`",
+    label = "`{Self}` is not a pin-initializer for type `{T}`"
+)]
 pub trait InitPin<T: ?Sized>: Sized {
     /// The error type that can occur during initialization.
     type Error;
@@ -255,6 +259,10 @@ pub type InitResult<'a, T, E> = Result<Own<'a, T>, InitError<'a, T, E>>;
 /// the same restrictions regarding partially-initialized states. This is
 /// because the values initialized through this trait are not pinned, and thus
 /// do not have the same safety guarantees that pinned values require.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not an initializer for places of type `{T}`",
+    label = "`{Self}` is not an initializer for type `{T}`"
+)]
 pub trait Init<T: ?Sized>: InitPin<T> {
     /// Initializes a place with a value.
     ///
@@ -300,6 +308,10 @@ pub trait Init<T: ?Sized>: InitPin<T> {
 ///
 /// This trait is used to allow types to be directly used as initializers
 /// without needing to wrap them in a specific initializer factory function.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not an initializer for places of type `{T}`",
+    label = "`{Self}` is not an initializer for type `{T}`"
+)]
 pub trait IntoInit<T: ?Sized, Marker = ()>: Sized {
     /// Which kind of initializer this converts into?
     type Init: InitPin<T, Error = Self::Error>;
@@ -329,6 +341,11 @@ impl<I: InitPin<T>, T: ?Sized> IntoInit<T> for I {
 /// automatically derived to ensure correct behavior.
 ///
 /// [`InitPin`]: macro@crate::InitPin
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be structurally pin-initialized",
+    label = "`{Self}` cannot be structurally pin-initialized",
+    note = "`#[derive(InitPin)]` to enable structural pin-initialization for this type"
+)]
 pub trait StructuralInitPin<'b>: Sized {
     #[doc(hidden)]
     type InitPin<'a: 'b>
@@ -348,6 +365,11 @@ pub trait StructuralInitPin<'b>: Sized {
 /// context.
 ///
 /// [`Init`]: macro@crate::Init
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be structurally initialized",
+    label = "`{Self}` cannot be structurally initialized",
+    note = "`#[derive(Init)]` to enable structural initialization for this type"
+)]
 pub trait StructuralInit<'b>: Sized {
     #[doc(hidden)]
     type Init;
