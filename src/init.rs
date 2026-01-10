@@ -370,7 +370,7 @@ pub trait StructuralInitPin<'b>: Sized {
     label = "`{Self}` cannot be structurally initialized",
     note = "`#[derive(Init)]` to enable structural initialization for this type"
 )]
-pub trait StructuralInit<'b>: Sized {
+pub trait StructuralInit<'b>: StructuralInitPin<'b> {
     #[doc(hidden)]
     type Init;
 

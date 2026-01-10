@@ -2,7 +2,7 @@ use std::{cell::Cell, marker::PhantomData};
 
 use placid::*;
 
-#[derive(InitPin, Init)]
+#[derive(InitPin)]
 struct TestStruct {
     a: u32,
     b: String,
@@ -13,19 +13,12 @@ fn test_build() {
     let pown: POwn<TestStruct> = pown!(init_pin!(
         #[err(core::convert::Infallible)]
         TestStruct {
-            a: init::value(42),
-            b: || String::from("Hello"),
+            a: init::value(99).and(|i| *i += 1),
+            b: init::with(|| String::from("Hello")),
         }
     ));
-    assert_eq!(pown.a, 42);
+    assert_eq!(pown.a, 100);
     assert_eq!(pown.b, "Hello");
-
-    let own: Own<TestStruct> = own!(init!(TestStruct {
-        a: init::value(99).and(|i| *i += 1),
-        b: init::with(|| String::from("World")),
-    }));
-    assert_eq!(own.a, 100);
-    assert_eq!(own.b, "World");
 }
 
 #[test]
@@ -41,7 +34,7 @@ fn test_drop() {
         }
     }
 
-    #[derive(InitPin, Init)]
+    #[derive(Init)]
     struct TestDrop {
         tracker: DropTracker,
         bomb: u32,
@@ -66,7 +59,7 @@ fn test_drop() {
     assert!(DROPPED.get());
 }
 
-#[derive(InitPin, Init)]
+#[derive(Init)]
 pub struct GenericHygiene<Base, Ptr: core::fmt::Debug, Pin>
 where
     Pin: Send + Sync + 'static,
@@ -76,7 +69,7 @@ where
     pub(crate) pin: PhantomData<Pin>,
 }
 
-#[derive(InitPin, Init)]
+#[derive(InitPin)]
 struct Nested {
     #[pin]
     field: TestStruct,
@@ -96,15 +89,4 @@ fn test_nested() {
     assert_eq!(pown.field.a, 7);
     assert_eq!(pown.field.b, "Nested");
     assert_eq!(pown.unpinned, 123);
-
-    let own: Own<Nested> = own!(init!(Nested {
-        field: TestStruct {
-            a: init::value(7).and(|i| *i += 1),
-            b: init::with(|| String::from("Nested Own")),
-        },
-        unpinned: 456,
-    }));
-    assert_eq!(own.field.a, 8);
-    assert_eq!(own.field.b, "Nested Own");
-    assert_eq!(own.unpinned, 456);
 }

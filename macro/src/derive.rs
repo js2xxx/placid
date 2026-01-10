@@ -560,5 +560,7 @@ pub fn init_pin(input: &DeriveInput) -> Result<TokenStream> {
 }
 
 pub fn init(input: &DeriveInput) -> Result<TokenStream> {
-    derive(input, false)
+    let mut tt = derive(input, false)?;
+    tt.extend(derive(input, true)?);
+    Ok(tt)
 }

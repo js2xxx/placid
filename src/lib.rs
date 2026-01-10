@@ -290,10 +290,14 @@ mod sealed {
 ///
 /// It also implements [`init::StructuralInit`] for the derived type.
 ///
-/// A struct type may derive both [`Init`] and [`InitPin`] if it supports both
-/// unpinned and pinned initialization. However, the `#[pin]` attribute is only
-/// applicable to the `InitPin` derivation, and is treated as omitted when
-/// deriving `Init`.
+/// [`macro@Init`] and [`macro@InitPin`] are mutually exclusive; a type can
+/// derive either one or the other, depending on whether it supports unpinned or
+/// pinned initialization.
+///
+/// Types that derive `Init` automatically implement [`init::StructuralInit`]
+/// and [`init::StructuralInitPin`] (i.e., **auto-derives [`macro@InitPin`]
+/// without structural field pinning**. Please use it carefully with other `pin`
+/// based crates, such as `pin-projection`).
 ///
 /// # Examples
 ///
@@ -323,10 +327,12 @@ pub use placid_macro::Init;
 ///
 /// It also implements [`init::StructuralInitPin`] for the derived type.
 ///
-/// A struct type may derive both [`Init`] and [`InitPin`] if it supports both
-/// unpinned and pinned initialization. However, the `#[pin]` attribute is only
-/// applicable to the `InitPin` derivation, and is treated as omitted when
-/// deriving `Init`.
+/// [`macro@Init`] and [`macro@InitPin`] are mutually exclusive; a type can
+/// derive either one or the other, depending on whether it supports unpinned or
+/// pinned initialization.
+///
+/// Types that derive `InitPin` automatically implement
+/// [`init::StructuralInitPin`].
 ///
 /// # Examples
 ///
