@@ -1,10 +1,9 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{
-    Error, Fields, GenericParam, Generics, Lifetime, Member, Result, TraitBound,
+    DeriveInput, Error, Fields, GenericParam, Generics, Lifetime, Member, Result, TraitBound,
     TraitBoundModifier, TypeParamBound, parse_quote, punctuated::Punctuated,
 };
-use synstructure::Structure;
 
 fn opt_iter<T>(v: &Option<T>) -> &[T] {
     match v {
@@ -13,11 +12,11 @@ fn opt_iter<T>(v: &Option<T>) -> &[T] {
     }
 }
 
-fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Error> {
+fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream, Error> {
     // Extract generics and where clauses
     let Generics {
         params: generics, where_clause, ..
-    } = &s.ast().generics;
+    } = &input.generics;
     let generics: Vec<_> = generics
         .into_iter()
         .map(|x| {
@@ -59,11 +58,11 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
         })
         .collect();
 
-    let vis = &s.ast().vis;
-    let ident = &s.ast().ident;
+    let vis = &input.vis;
+    let ident = &input.ident;
 
-    match &s.ast().data {
-        syn::Data::Struct(_) => {}
+    let variant = match &input.data {
+        syn::Data::Struct(data) => data,
         syn::Data::Enum(e) => {
             return Err(Error::new_spanned(
                 e.enum_token,
@@ -78,9 +77,7 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
         }
     };
 
-    let variant = s.variants()[0].ast();
-
-    let (fields, named) = match variant.fields {
+    let (fields, named) = match &variant.fields {
         Fields::Named(v) => (&v.named, true),
         Fields::Unnamed(v) => (&v.unnamed, false),
         Fields::Unit => (&Punctuated::new(), false),
@@ -121,6 +118,17 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
     } else {
         format_ident!("InitError")
     };
+
+    let bound_generics: Vec<_> = generics
+        .iter()
+        .map(|g| match g.clone() {
+            GenericParam::Type(mut t) => {
+                t.bounds.push(parse_quote!(#init_lifetime));
+                GenericParam::Type(t)
+            }
+            other => other,
+        })
+        .collect();
 
     // Hygiene for local variables.
     let mixed_site = Span::mixed_site();
@@ -177,7 +185,6 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
         });
 
         quote_spanned! { mixed_site =>
-            #[automatically_derived]
             #vis struct #builder_ident<
                 #this_lifetime,
                 #(#pin_lifetime_q,)*
@@ -188,7 +195,6 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
                 #slot_def
             }
 
-            #[automatically_derived]
             impl<
                 #this_lifetime,
                 #(#pin_lifetime_q,)*
@@ -225,7 +231,6 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
                 }
             }
 
-            #[automatically_derived]
             impl<
                 #this_lifetime,
                 #(#pin_lifetime_q,)*
@@ -385,7 +390,6 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
         };
 
         builder.push(quote_spanned! { mixed_site =>
-            #[automatically_derived]
             impl<
                 #this_lifetime,
                 #(#pin_lifetime_q,)*
@@ -462,8 +466,24 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
             quote_spanned! { mixed_site => slot }
         });
 
+        let (structural_trait, structural_ty, structural_func, structural_where) =
+            if let Some(pin_lifetime) = &pin_lifetime {
+                (
+                    quote_spanned! { mixed_site => StructuralInitPin },
+                    quote_spanned! { mixed_site => InitPin<#this_lifetime: #pin_lifetime> },
+                    quote_spanned! { mixed_site => init_pin<#this_lifetime> },
+                    quote_spanned! { mixed_site => where Self: #this_lifetime },
+                )
+            } else {
+                (
+                    quote_spanned! { mixed_site => StructuralInit },
+                    quote_spanned! { mixed_site => Init },
+                    quote_spanned! { mixed_site => init },
+                    quote_spanned! { mixed_site => },
+                )
+            };
+
         quote_spanned! { mixed_site =>
-            #[automatically_derived]
             impl<
                 #this_lifetime,
                 #(#pin_lifetime_q,)*
@@ -482,24 +502,35 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
             }
 
             #[automatically_derived]
-            impl<
-                #this_lifetime,
-                #(#pin_lifetime_q,)*
-                #(#generics,)*
-            > #builder_ident<
-                #this_lifetime,
-                #(#pin_lifetime_q,)*
+            unsafe impl<
+                #init_lifetime,
+                #(#bound_generics,)*
+            > ::placid::init::#structural_trait<#init_lifetime> for #ident<
                 #(#ty_generics,)*
-                #typestate_ty_pre
             > #where_clause {
-                pub const fn new(
+                type #structural_ty = #builder_ident<
+                    #this_lifetime,
+                    #(#pin_lifetime_q,)*
+                    #(#ty_generics,)*
+                    #typestate_ty_pre
+                >
+                #structural_where;
+
+                fn #structural_func(
                     uninit: ::placid::Uninit<
                         #this_lifetime,
                         #ident<#(#ty_generics),*>,
                     >,
                     #slot_arg
-                ) -> Self {
-                    Self { uninit, #slot_assign }
+                ) -> #builder_ident<
+                    #this_lifetime,
+                    #(#pin_lifetime_q,)*
+                    #(#ty_generics,)*
+                    #typestate_ty_pre
+                >
+                #structural_where
+                {
+                    #builder_ident { uninit, #slot_assign }
                 }
             }
         }
@@ -508,10 +539,10 @@ fn derive(s: Structure<'_>, pinned: bool) -> std::result::Result<TokenStream, Er
     Ok(quote!(#(#builder)*))
 }
 
-pub fn derive_init_pin(s: Structure) -> Result<TokenStream> {
-    derive(s, true)
+pub fn init_pin(input: &DeriveInput) -> Result<TokenStream> {
+    derive(input, true)
 }
 
-pub fn derive_init(s: Structure) -> Result<TokenStream> {
-    derive(s, false)
+pub fn init(input: &DeriveInput) -> Result<TokenStream> {
+    derive(input, false)
 }

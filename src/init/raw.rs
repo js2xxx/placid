@@ -42,18 +42,13 @@ where
 /// patterns. The closure can fail by returning an error.
 ///
 /// This is rarely needed for typical use cases and is primarily useful for
-/// implementing custom initializers or library-level primitives. For most
-/// applications, [`with`], [`and`], or [`or`] are more appropriate.
-///
-/// [`with`]: crate::init::with
-/// [`and`]: fn@crate::init::and
-/// [`or`]: fn@crate::init::or
+/// implementing custom initializers or library-level primitives.
 pub const fn try_raw_pin<'b, T: ?Sized + 'b, E, F>(f: F) -> TryRawPin<F, T, E>
 where
     F: for<'a> FnOnce(
         Uninit<'a, T>,
         DropSlot<'a, 'b, T>,
-    ) -> Result<POwn<'b, T>, InitError<'a, T, E>>,
+    ) -> Result<POwn<'b, T>, InitPinError<'a, 'b, T, E>>,
 {
     TryRawPin(f, PhantomData)
 }
@@ -115,12 +110,7 @@ where
 /// by returning an error.
 ///
 /// This is rarely needed for typical use cases and is primarily useful for
-/// implementing custom initializers or library-level primitives. For most
-/// applications, [`with`], [`and`], or [`or`] are more appropriate.
-///
-/// [`with`]: crate::init::with
-/// [`and`]: fn@crate::init::and
-/// [`or`]: fn@crate::init::or
+/// implementing custom initializers or library-level primitives.
 pub const fn try_raw<T, E, F>(f: F) -> TryRaw<F, T, E>
 where
     F: FnOnce(Uninit<'_, T>) -> Result<Own<'_, T>, InitError<'_, T, E>>,

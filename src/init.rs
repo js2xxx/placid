@@ -322,6 +322,46 @@ impl<'b, I: InitPin<'b>> IntoInit<'b, I::Target> for I {
     }
 }
 
+/// Types that can be structurally initialized in a pinned place.
+///
+/// This trait is automatically implemented for types that derive `InitPin`.
+/// It provides a method to structurally initialize the type in a pinned
+/// context.
+///
+/// # Safety
+///
+/// Users should not implement this trait manually. It is intended to be
+/// automatically derived to ensure correct behavior.
+pub unsafe trait StructuralInitPin<'b> {
+    /// The structural initializer.
+    type InitPin<'a: 'b>
+    where
+        Self: 'a;
+
+    /// Start initializing the type in a pinned place.
+    fn init_pin<'a>(place: Uninit<'a, Self>, slot: DropSlot<'a, 'b, Self>) -> Self::InitPin<'a>
+    where
+        Self: 'a;
+}
+
+/// Types that can be structurally initialized in a place.
+///
+/// This trait is automatically implemented for types that derive `Init`. It
+/// provides a method to structurally initialize the type in a non-pinned
+/// context.
+///
+/// # Safety
+///
+/// Users should not implement this trait manually. It is intended to be
+/// automatically derived to ensure correct behavior.
+pub unsafe trait StructuralInit<'b> {
+    /// The structural initializer.
+    type Init;
+
+    /// Start initializing the type in a place.
+    fn init(place: Uninit<'b, Self>) -> Self::Init;
+}
+
 // Factory functions & adapters
 
 mod and;

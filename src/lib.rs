@@ -17,7 +17,7 @@
 
 extern crate alloc;
 
-pub use placid_macro::{Init, InitPin};
+pub use placid_macro::{Init, InitPin, init, init_pin};
 
 pub mod place;
 pub use self::place::{Place, Placed};

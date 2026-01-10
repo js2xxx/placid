@@ -10,25 +10,22 @@ struct TestStruct {
 
 #[test]
 fn test_build() {
-    let pown: POwn<TestStruct> = pown!(init::raw_pin(|uninit, slot| {
-        InitPinTestStruct::new(uninit, slot)
-            .a(42)
-            .unwrap()
-            .b(|| String::from("Hello"))
-            .unwrap()
-            .build()
-    }));
+    let pown: POwn<TestStruct> = pown!(init_pin! {
+        #[err(core::convert::Infallible)]
+        TestStruct {
+            a: 42,
+            b: || String::from("Hello"),
+        }
+    });
     assert_eq!(pown.a, 42);
     assert_eq!(pown.b, "Hello");
 
-    let own: Own<TestStruct> = own!(init::raw(|uninit| {
-        InitTestStruct::new(uninit)
-            .a(100)
-            .unwrap()
-            .b(|| String::from("World"))
-            .unwrap()
-            .build()
-    }));
+    let own: Own<TestStruct> = own!(init! {
+        TestStruct {
+            a: 100,
+            b: || String::from("World"),
+        }
+    });
     assert_eq!(own.a, 100);
     assert_eq!(own.b, "World");
 }
@@ -39,6 +36,7 @@ fn test_drop() {
         static DROPPED: Cell<bool> = const { Cell::new(false) };
     }
 
+    #[derive(InitPin, Init)]
     struct DropTracker;
     impl Drop for DropTracker {
         fn drop(&mut self) {
@@ -53,27 +51,24 @@ fn test_drop() {
     }
 
     let t = std::panic::catch_unwind(|| {
-        let _: POwn<TestDrop> = pown!(init::raw_pin(|uninit, slot| {
-            InitPinTestDrop::new(uninit, slot)
-                .tracker(|| DropTracker)
-                .unwrap()
-                .bomb(|| -> u32 { panic!("Initialization failed") })
-                .unwrap()
-                .build()
-        }));
+        let _: POwn<TestDrop> = pown!(init_pin! {
+            TestDrop {
+                tracker: DropTracker,
+                bomb: || -> u32 { panic!("Initialization failed") },
+            }
+        });
     });
     t.unwrap_err();
     assert!(DROPPED.replace(false));
 
     let t = std::panic::catch_unwind(|| {
-        let _: Own<TestDrop> = own!(init::raw(|uninit| {
-            InitTestDrop::new(uninit)
-                .tracker(|| DropTracker)
-                .unwrap()
-                .bomb(|| -> u32 { panic!("Initialization failed") })
-                .unwrap()
-                .build()
-        }));
+        let _: Own<TestDrop> = own!(init! {
+            #[err(core::convert::Infallible)]
+            TestDrop {
+                tracker: DropTracker,
+                bomb: || -> u32 { panic!("Initialization failed") },
+            }
+        });
     });
     t.unwrap_err();
     assert!(DROPPED.get());
