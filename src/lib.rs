@@ -376,7 +376,8 @@ pub use placid_macro::InitPin;
 ///     // Specify an optional error type for
 ///     // sub-initializers to convert into.
 ///     // Otherwise, no conversion is performed.
-///     #[err(ErrorType)] TypeName {
+///     #[err(ErrorType)]
+///     TypeName {
 ///         field: initializer,
 ///         // Sub-initializers can also have their own error types.
 ///         #[err(SubErrorType)]
@@ -427,7 +428,8 @@ pub use placid_macro::init;
 ///     // Specify an optional error type for
 ///     // sub-initializers to convert into.
 ///     // Otherwise, no conversion is performed.
-///     #[err(ErrorType)] TypeName {
+///     #[err(ErrorType)]
+///     TypeName {
 ///         field: initializer,
 ///         // Sub-initializers can also have their own error types.
 ///         #[err(SubErrorType)]
@@ -450,15 +452,15 @@ pub use placid_macro::init;
 /// A simple usage example (although not practical):
 ///
 /// ```rust
-/// use placid::{own, Own, init, Init};
+/// use placid::{pown, POwn, init_pin, InitPin};
 ///
-/// #[derive(Init)]
+/// #[derive(InitPin)]
 /// struct Point {
 ///     x: i32,
 ///     y: i32,
 /// }
 ///
-/// let owned: Own<Point> = own!(init!(Point { x: 10, y: 20 }));
+/// let owned: POwn<Point> = pown!(init_pin!(Point { x: 10, y: 20 }));
 /// assert_eq!(owned.x, 10);
 /// assert_eq!(owned.y, 20);
 /// ```
