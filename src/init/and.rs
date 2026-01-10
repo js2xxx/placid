@@ -18,15 +18,15 @@ pub struct And<I, F> {
     f: F,
 }
 
-impl<'b, T, I, F> InitPin<'b, T> for And<I, F>
+impl<T, I, F> InitPin<T> for And<I, F>
 where
     T: ?Sized + Unpin,
-    I: Init<'b, T>,
+    I: Init<T>,
     F: FnOnce(&mut T),
 {
     type Error = I::Error;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -37,13 +37,13 @@ where
     }
 }
 
-impl<'b, T, I, F> Init<'b, T> for And<I, F>
+impl<T, I, F> Init<T> for And<I, F>
 where
     T: ?Sized + Unpin,
-    I: Init<'b, T>,
+    I: Init<T>,
     F: FnOnce(&mut T),
 {
-    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, T, I::Error> {
+    fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, I::Error> {
         let mut own = self.init.init(place)?;
         (self.f)(&mut *own);
         Ok(own)
@@ -60,9 +60,9 @@ where
 /// let owned: Own<Vec<_>> = own!(and(vec![1, 2, 3], |v| v.push(4)));
 /// assert_eq!(*owned, vec![1, 2, 3, 4]);
 /// ```
-pub fn and<'b, M, I, F, T: ?Sized + Unpin>(init: I, f: F) -> And<I::Init, F>
+pub fn and<M, I, F, T: ?Sized + Unpin>(init: I, f: F) -> And<I::Init, F>
 where
-    I: IntoInit<'b, T, M>,
+    I: IntoInit<T, M>,
     F: FnOnce(&mut T),
 {
     And { init: init.into_init(), f }
@@ -80,15 +80,15 @@ pub struct AndPin<I, F> {
     f: F,
 }
 
-impl<'b, T, I, F> InitPin<'b, T> for AndPin<I, F>
+impl<T, I, F> InitPin<T> for AndPin<I, F>
 where
     T: ?Sized,
-    I: InitPin<'b, T>,
+    I: InitPin<T>,
     F: FnOnce(Pin<&mut T>),
 {
     type Error = I::Error;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -114,9 +114,9 @@ where
 /// ));
 /// assert_eq!(*owned, [1, 2, 3, 4]);
 /// ```
-pub fn and_pin<'b, M, I, F, T: ?Sized>(init: I, f: F) -> AndPin<I::Init, F>
+pub fn and_pin<M, I, F, T: ?Sized>(init: I, f: F) -> AndPin<I::Init, F>
 where
-    I: IntoInit<'b, T, M>,
+    I: IntoInit<T, M>,
     F: FnOnce(Pin<&mut T>),
 {
     AndPin { init: init.into_init(), f }

@@ -1,5 +1,5 @@
 //! Traits and types for working with places in memory.
-//! 
+//!
 //! See the [`Place`] trait for more details.
 
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
@@ -91,7 +91,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn write<'b, M, I>(&'b mut self, init: I) -> Own<'b, T>
     where
-        I: IntoInit<'b, T, M, Init: Init<'b, T>, Error: fmt::Debug>,
+        I: IntoInit<T, M, Init: Init<T>, Error: fmt::Debug>,
     {
         Uninit::from_mut(self).write(init)
     }
@@ -117,7 +117,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn write_pin<'a, 'b, M, I>(&'a mut self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
-        I: IntoInit<'b, T, M, Error: fmt::Debug>,
+        I: IntoInit<T, M, Error: fmt::Debug>,
     {
         Uninit::from_mut(self).write_pin(init, slot)
     }
@@ -144,7 +144,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn init<M, I, E>(self, init: I) -> Self::Init
     where
-        I: for<'b> IntoInit<'b, T, M, Init: Init<'b, T>, Error = E>,
+        I: IntoInit<T, M, Init: Init<T>, Error = E>,
         E: fmt::Debug,
     {
         self.try_init(init).map_err(|(e, _)| e).unwrap()
@@ -181,15 +181,12 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn try_init<M, I, E>(mut self, init: I) -> Result<Self::Init, (E, Self)>
     where
-        I: for<'b> IntoInit<'b, T, M, Init: Init<'b, T>, Error = E>,
+        I: IntoInit<T, M, Init: Init<T>, Error = E>,
     {
         'ok: {
             let err = match Uninit::from_mut(&mut self).try_write(init) {
-                Ok(own) => {
-                    mem::forget(own);
-                    break 'ok;
-                }
-                Err(err) => err.error,
+                Ok(own) => break 'ok mem::forget(own),
+                Err(err) => (mem::forget(err.place), err.error).1,
             };
             return Err((err, self));
         }
@@ -221,7 +218,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn init_pin<M, I, E>(self, init: I) -> Pin<Self::Init>
     where
-        I: for<'b> IntoInit<'b, T, M, Error = E>,
+        I: IntoInit<T, M, Error = E>,
         Self::Init: Deref,
         E: fmt::Debug,
     {
@@ -258,20 +255,18 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn try_init_pin<M, I, E>(mut self, init: I) -> Result<Pin<Self::Init>, (E, Self)>
     where
-        I: for<'b> IntoInit<'b, T, M, Error = E>,
+        I: IntoInit<T, M, Error = E>,
         Self::Init: Deref,
     {
         'ok: {
             let mut slot = ManuallyDrop::new(crate::pin::DroppingSlot::new());
-            // SAFETY: We actually forget `slot` since the lifetime of the object returns
-            // back to the place itself instead of `POwn`.
+            // SAFETY:
+            // - We actually forget `slot` since the lifetime of the object returns back to
+            //   the place itself instead of `POwn`.
             let sr = unsafe { crate::pin::DropSlot::new_unchecked(&mut slot) };
             let err = match Uninit::from_mut(&mut self).try_write_pin(init, sr) {
-                Ok(own) => {
-                    mem::forget(own);
-                    break 'ok;
-                }
-                Err(err) => err.error,
+                Ok(own) => break 'ok mem::forget(own),
+                Err(err) => (mem::forget((err.place, err.slot)), err.error).1,
             };
             return Err((err, self));
         }
@@ -308,7 +303,7 @@ pub trait Placed {
     fn init<P, M, I, E>(place: P, init: I) -> P::Init
     where
         P: Place<Self>,
-        I: for<'b> IntoInit<'b, Self, M, Init: Init<'b, Self>, Error = E>,
+        I: IntoInit<Self, M, Init: Init<Self>, Error = E>,
         E: fmt::Debug,
     {
         place.init(init)
@@ -340,7 +335,7 @@ pub trait Placed {
     fn try_init<P, M, I, E>(place: P, init: I) -> Result<P::Init, (E, P)>
     where
         P: Place<Self>,
-        I: for<'b> IntoInit<'b, Self, M, Init: Init<'b, Self>, Error = E>,
+        I: IntoInit<Self, M, Init: Init<Self>, Error = E>,
     {
         place.try_init(init)
     }
@@ -365,7 +360,7 @@ pub trait Placed {
     fn init_pin<P, M, I, E>(place: P, init: I) -> Pin<P::Init>
     where
         P: Place<Self>,
-        I: for<'b> IntoInit<'b, Self, M, Error = E>,
+        I: IntoInit<Self, M, Error = E>,
         P::Init: Deref,
         E: fmt::Debug,
     {
@@ -398,7 +393,7 @@ pub trait Placed {
     fn try_init_pin<P, M, I, E>(place: P, init: I) -> Result<Pin<P::Init>, (E, P)>
     where
         P: Place<Self>,
-        I: for<'b> IntoInit<'b, Self, M, Error = E>,
+        I: IntoInit<Self, M, Error = E>,
         P::Init: Deref,
     {
         place.try_init_pin(init)

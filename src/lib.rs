@@ -35,7 +35,7 @@
 //!
 //! ```rust
 //! use placid::{Own, own, Init, init};
-//! 
+//!
 //! let simple = own!(42);
 //! assert_eq!(*simple, 42);
 //!
@@ -153,7 +153,90 @@
 //!
 //! ## In-place construction & `&uninit T`
 //!
-//! TODO: explain uninit references and in-place construction.
+//! Uninit references represent writable references to uninitialized memory.
+//! They are primarily used for constructing values in-place, allowing for
+//! efficient initialization without unnecessary copies or moves. It combines
+//! with initializers to facilitate safe and ergonomic in-place construction.
+//!
+//! An initializer resembles with a function typed `fn(&uninit T) -> Result<&own
+//! T, E>` (or `fn(&uninit T) -> Result<&pin own T, E>` for the pinning
+//! variant). It converts an uninit reference into an owned reference by
+//! initializing the value in-place.
+//!
+//! Initializers can be composed together to build complex initialization logic.
+//! See the [`Init`] and [`InitPin`] traits for more details.
+//!
+//! Initializers can also adopt a structural strategy by deriving the
+//! [`macro@Init`] and [`macro@InitPin`] macros, which can then be constructed
+//! by [`init!`] and [`init_pin!`] macros respectively. This allows for
+//! declarative and ergonomic construction of complex types in-place.
+//!
+//! ```rust
+//! use placid::{Uninit, uninit, init_pin, init, InitPin, Placed, POwn};
+//! use std::{marker::PhantomPinned, pin::Pin, convert::Infallible};
+//!
+//! #[derive(InitPin)]
+//! struct A {
+//!     b: i32,
+//!     c: String,
+//!     marker: PhantomPinned,
+//! }
+//!
+//! #[derive(InitPin)]
+//! struct Nested {
+//!     a: A,
+//!     d: [u8; 1024],
+//!     mid: *mut u8,
+//! }
+//!
+//! impl Nested {
+//!     pub fn new(c: &str) -> impl InitPin<Self, Error = Infallible> {
+//!         init_pin!(Nested {
+//!             // Nested initializers are supported.
+//!             a: A {
+//!                 // Values and closures are all initializers.
+//!                 b: 100,
+//!                 c: || c.to_string(),
+//!                 marker: init::value(PhantomPinned),
+//!             },
+//!             // There are also a bunch of direct initializer factories.
+//!             d: init::repeat(42),
+//!             mid: std::ptr::null_mut(),
+//!         })
+//!         .and_pin(|this| unsafe {
+//!             // SAFETY: We are initializing the self-referential pointer.
+//!             let this = Pin::into_inner_unchecked(this);
+//!             this.mid = this.d.as_mut_ptr().add(512);
+//!             *this.mid = 1;
+//!         })
+//!     }
+//!
+//!     pub fn assert_values(&self, c: &str) {
+//!         assert_eq!(self.a.b, 100);
+//!         assert_eq!(&*self.a.c, c);
+//!         assert_eq!(self.d[149], 42);
+//!         assert_eq!(unsafe { *self.mid }, 1);
+//!     }
+//! }
+//!
+//! // Initialize on stack.
+//! let uninit = uninit!(Nested);
+//! let slot = placid::drop_slot!();
+//! let pinned = uninit.write_pin(Nested::new("stack"), slot);
+//! pinned.assert_values("stack");
+//!
+//! // Initialize in a Box.
+//! let mut place = Box::<Nested>::new_uninit();
+//! let uninit = Uninit::from_mut(&mut place);
+//! let slot = placid::drop_slot!();
+//! let pinned: POwn<Nested> = uninit.write_pin(Nested::new("boxed"), slot);
+//! pinned.assert_values("boxed");
+//!
+//! // Convenience methods for placing initialization.
+//! let pinned: Pin<Box<Nested>> =
+//!     Nested::init_pin(Box::new_uninit(), Nested::new("boxed via method"));
+//! pinned.assert_values("boxed via method");
+//! ```
 //!
 //! [`&own T`]: crate::Own
 //! [`&uninit T`]: crate::Uninit
@@ -178,6 +261,9 @@
 #![feature(ptr_metadata)]
 
 extern crate alloc;
+
+#[cfg(test)]
+extern crate std;
 
 pub use placid_macro::{Init, InitPin, init, init_pin};
 

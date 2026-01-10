@@ -289,7 +289,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
             quote_spanned! { mixed_site => }
         } else {
             quote_spanned! { mixed_site =>
-                Init: ::placid::init::Init<#this_lifetime, #ty>,
+                Init: ::placid::init::Init<#ty>,
             }
         };
 
@@ -347,7 +347,6 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
             >
             where
                 #arg_ident: ::placid::init::IntoInit<
-                    #init_lifetime,
                     #ty,
                     #marker_ident,
                     #init_bound
@@ -504,7 +503,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
             }
 
             #[automatically_derived]
-            unsafe impl<
+            impl<
                 #init_lifetime,
                 #(#bound_generics,)*
             > ::placid::init::#structural_trait<#init_lifetime> for #ident<

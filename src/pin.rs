@@ -7,10 +7,10 @@
 //! `Pin<Own<T>>`) that cannot be forgotten, ensuring that pinned values
 //! are properly dropped. It also includes macros and traits for creating and
 //! manipulating pinned owned references.
-//! 
+//!
 //! For constructing pinned owned references onto the stack, see the
 //! [`pown!`] macro.
-//! 
+//!
 //! For converting containers into owned references, see the [`IntoOwn`] trait
 //! and the [`into_pown!`] macro.
 //!

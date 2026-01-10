@@ -281,7 +281,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// ```
     pub fn write<I, Marker>(self, init: I) -> Own<'a, T>
     where
-        I: IntoInit<'a, T, Marker, Init: Init<'a, T>, Error: fmt::Debug>,
+        I: IntoInit<T, Marker, Init: Init<T>, Error: fmt::Debug>,
     {
         self.try_write(init).unwrap()
     }
@@ -302,7 +302,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// ```
     pub fn try_write<I, Marker>(self, init: I) -> InitResult<'a, T, I::Error>
     where
-        I: IntoInit<'a, T, Marker, Init: Init<'a, T>>,
+        I: IntoInit<T, Marker, Init: Init<T>>,
     {
         init.into_init().init(self)
     }
@@ -325,7 +325,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// ```
     pub fn write_pin<'b, I, Marker>(self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
-        I: IntoInit<'b, T, Marker, Error: fmt::Debug>,
+        I: IntoInit<T, Marker, Error: fmt::Debug>,
     {
         self.try_write_pin(init, slot).unwrap()
     }
@@ -351,7 +351,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
         slot: DropSlot<'a, 'b, T>,
     ) -> InitPinResult<'a, 'b, T, I::Error>
     where
-        I: IntoInit<'b, T, Marker>,
+        I: IntoInit<T, Marker>,
     {
         init.into_init().init_pin(self, slot)
     }

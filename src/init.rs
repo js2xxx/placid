@@ -87,7 +87,7 @@ pub type InitPinResult<'a, 'b, T, E> = Result<POwn<'b, T>, InitPinError<'a, 'b, 
 /// resuming the panic**. On the other hand, if the initialization of `b` fails
 /// after `c` is initialized, no cleanup is necessary since `c` is not pinned
 /// and can be safely `mem::forget`ed.
-pub trait InitPin<'b, T: ?Sized>: Sized {
+pub trait InitPin<T: ?Sized>: Sized {
     /// The error type that can occur during initialization.
     type Error;
 
@@ -109,7 +109,7 @@ pub trait InitPin<'b, T: ?Sized>: Sized {
     /// containing the error and the failed place.
     ///
     /// [pinned owned reference]: crate::pin::POwn
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -157,7 +157,7 @@ pub trait InitPin<'b, T: ?Sized>: Sized {
     /// ```
     fn or<M, I2>(self, other: I2) -> Or<Self, I2, M>
     where
-        I2: IntoInit<'b, T, M, Error: Into<Self::Error>>,
+        I2: IntoInit<T, M, Error: Into<Self::Error>>,
     {
         or(self, other)
     }
@@ -182,7 +182,7 @@ pub trait InitPin<'b, T: ?Sized>: Sized {
     fn or_else<F, I2>(self, f: F) -> OrElse<Self, F>
     where
         F: FnOnce(Self::Error) -> I2,
-        I2: InitPin<'b, T, Error: Into<Self::Error>>,
+        I2: InitPin<T, Error: Into<Self::Error>>,
     {
         or_else(self, f)
     }
@@ -255,7 +255,7 @@ pub type InitResult<'a, T, E> = Result<Own<'a, T>, InitError<'a, T, E>>;
 /// the same restrictions regarding partially-initialized states. This is
 /// because the values initialized through this trait are not pinned, and thus
 /// do not have the same safety guarantees that pinned values require.
-pub trait Init<'b, T: ?Sized>: InitPin<'b, T> {
+pub trait Init<T: ?Sized>: InitPin<T> {
     /// Initializes a place with a value.
     ///
     /// This method performs the actual initialization of an uninitialized
@@ -272,7 +272,7 @@ pub trait Init<'b, T: ?Sized>: InitPin<'b, T> {
     /// containing the error and the failed place.
     ///
     /// [owned reference]: crate::Own
-    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, T, Self::Error>;
+    fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, Self::Error>;
 
     /// Chains a closure to execute after successful initialization.
     ///
@@ -300,9 +300,9 @@ pub trait Init<'b, T: ?Sized>: InitPin<'b, T> {
 ///
 /// This trait is used to allow types to be directly used as initializers
 /// without needing to wrap them in a specific initializer factory function.
-pub trait IntoInit<'b, T: ?Sized, Marker = ()>: Sized {
+pub trait IntoInit<T: ?Sized, Marker = ()>: Sized {
     /// Which kind of initializer this converts into?
-    type Init: InitPin<'b, T, Error = Self::Error>;
+    type Init: InitPin<T, Error = Self::Error>;
     /// The error type that can occur during initialization.
     type Error;
 
@@ -310,7 +310,7 @@ pub trait IntoInit<'b, T: ?Sized, Marker = ()>: Sized {
     fn into_init(self) -> Self::Init;
 }
 
-impl<'b, I: InitPin<'b, T>, T: ?Sized> IntoInit<'b, T> for I {
+impl<I: InitPin<T>, T: ?Sized> IntoInit<T> for I {
     type Init = I;
     type Error = I::Error;
 
@@ -325,13 +325,11 @@ impl<'b, I: InitPin<'b, T>, T: ?Sized> IntoInit<'b, T> for I {
 /// It provides a method to structurally initialize the type in a pinned
 /// context.
 ///
-/// # Safety
-///
 /// Users should not implement this trait manually. It is intended to be
 /// automatically derived to ensure correct behavior.
 ///
 /// [`InitPin`]: macro@crate::InitPin
-pub unsafe trait StructuralInitPin<'b>: Sized {
+pub trait StructuralInitPin<'b>: Sized {
     #[doc(hidden)]
     type InitPin<'a: 'b>
     where
@@ -349,13 +347,8 @@ pub unsafe trait StructuralInitPin<'b>: Sized {
 /// provides a method to structurally initialize the type in a non-pinned
 /// context.
 ///
-/// # Safety
-///
-/// Users should not implement this trait manually. It is intended to be
-/// automatically derived to ensure correct behavior.
-///
 /// [`Init`]: macro@crate::Init
-pub unsafe trait StructuralInit<'b>: Sized {
+pub trait StructuralInit<'b>: Sized {
     #[doc(hidden)]
     type Init;
 

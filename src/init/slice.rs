@@ -88,10 +88,10 @@ impl<T: Copy> SpecInitSlice<T> for &[T] {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Slice<'a, T>(&'a [T]);
 
-impl<'b, T: Clone> InitPin<'b, [T]> for Slice<'_, T> {
+impl<T: Clone> InitPin<[T]> for Slice<'_, T> {
     type Error = SliceError;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
@@ -103,16 +103,16 @@ impl<'b, T: Clone> InitPin<'b, [T]> for Slice<'_, T> {
     }
 }
 
-impl<'b, T: Clone> Init<'b, [T]> for Slice<'_, T> {
-    fn init(self, place: Uninit<'b, [T]>) -> InitResult<'b, [T], SliceError> {
+impl<T: Clone> Init<[T]> for Slice<'_, T> {
+    fn init(self, place: Uninit<'_, [T]>) -> InitResult<'_, [T], SliceError> {
         self.0.init_slice(place)
     }
 }
 
-impl<'b, T: Clone, const N: usize> InitPin<'b, [T; N]> for Slice<'_, T> {
+impl<T: Clone, const N: usize> InitPin<[T; N]> for Slice<'_, T> {
     type Error = SliceError;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, [T; N]>,
         slot: DropSlot<'a, 'b, [T; N]>,
@@ -124,8 +124,8 @@ impl<'b, T: Clone, const N: usize> InitPin<'b, [T; N]> for Slice<'_, T> {
     }
 }
 
-impl<'b, T: Clone, const N: usize> Init<'b, [T; N]> for Slice<'_, T> {
-    fn init(self, place: Uninit<'b, [T; N]>) -> InitResult<'b, [T; N], SliceError> {
+impl<T: Clone, const N: usize> Init<[T; N]> for Slice<'_, T> {
+    fn init(self, place: Uninit<'_, [T; N]>) -> InitResult<'_, [T; N], SliceError> {
         self.0.init_array(place)
     }
 }
@@ -167,7 +167,7 @@ pub const fn slice<T: Clone>(s: &[T]) -> Slice<'_, T> {
     Slice(s)
 }
 
-impl<'a, 'b, T: Clone> IntoInit<'b, [T], Slice<'a, T>> for &'a [T] {
+impl<'a, T: Clone> IntoInit<[T], Slice<'a, T>> for &'a [T] {
     type Init = Slice<'a, T>;
     type Error = SliceError;
 
@@ -176,7 +176,7 @@ impl<'a, 'b, T: Clone> IntoInit<'b, [T], Slice<'a, T>> for &'a [T] {
     }
 }
 
-impl<'a, 'b, T: Clone, const N: usize> IntoInit<'b, [T; N], Slice<'a, T>> for &'a [T] {
+impl<'a, T: Clone, const N: usize> IntoInit<[T; N], Slice<'a, T>> for &'a [T] {
     type Init = Slice<'a, T>;
     type Error = SliceError;
 
@@ -191,10 +191,10 @@ impl<'a, 'b, T: Clone, const N: usize> IntoInit<'b, [T; N], Slice<'a, T>> for &'
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Str<'a>(&'a str);
 
-impl<'b> InitPin<'b, str> for Str<'_> {
+impl InitPin<str> for Str<'_> {
     type Error = SliceError;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, str>,
         slot: DropSlot<'a, 'b, str>,
@@ -210,8 +210,8 @@ impl<'b> InitPin<'b, str> for Str<'_> {
     }
 }
 
-impl<'b> Init<'b, str> for Str<'_> {
-    fn init(self, mut place: Uninit<'b, str>) -> InitResult<'b, str, SliceError> {
+impl Init<str> for Str<'_> {
+    fn init(self, mut place: Uninit<'_, str>) -> InitResult<'_, str, SliceError> {
         if place.len() != self.0.len() {
             return Err(InitError { error: SliceError, place });
         }
@@ -247,7 +247,7 @@ pub const fn str(s: &str) -> Str<'_> {
     Str(s)
 }
 
-impl<'a, 'b> IntoInit<'a, str, Str<'b>> for &'b str {
+impl<'b> IntoInit<str, Str<'b>> for &'b str {
     type Init = Str<'b>;
     type Error = SliceError;
 
@@ -262,10 +262,10 @@ impl<'a, 'b> IntoInit<'a, str, Str<'b>> for &'b str {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Repeat<T>(T);
 
-impl<'b, T: Clone> InitPin<'b, [T]> for Repeat<T> {
+impl<T: Clone> InitPin<[T]> for Repeat<T> {
     type Error = Infallible;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
@@ -276,18 +276,18 @@ impl<'b, T: Clone> InitPin<'b, [T]> for Repeat<T> {
     }
 }
 
-impl<'b, T: Clone> Init<'b, [T]> for Repeat<T> {
-    fn init(self, mut place: Uninit<'b, [T]>) -> InitResult<'b, [T], Infallible> {
+impl<T: Clone> Init<[T]> for Repeat<T> {
+    fn init(self, mut place: Uninit<'_, [T]>) -> InitResult<'_, [T], Infallible> {
         place.write_filled(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
     }
 }
 
-impl<'b, T: Clone, const N: usize> InitPin<'b, [T; N]> for Repeat<T> {
+impl<T: Clone, const N: usize> InitPin<[T; N]> for Repeat<T> {
     type Error = Infallible;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, [T; N]>,
         slot: DropSlot<'a, 'b, [T; N]>,
@@ -298,8 +298,8 @@ impl<'b, T: Clone, const N: usize> InitPin<'b, [T; N]> for Repeat<T> {
     }
 }
 
-impl<'b, T: Clone, const N: usize> Init<'b, [T; N]> for Repeat<T> {
-    fn init(self, mut place: Uninit<'b, [T; N]>) -> InitResult<'b, [T; N], Infallible> {
+impl<T: Clone, const N: usize> Init<[T; N]> for Repeat<T> {
+    fn init(self, mut place: Uninit<'_, [T; N]>) -> InitResult<'_, [T; N], Infallible> {
         maybe_uninit_slice(&mut place).write_filled(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
@@ -332,13 +332,13 @@ pub const fn repeat<T: Clone>(value: T) -> Repeat<T> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RepeatWith<F>(F);
 
-impl<'b, T, F> InitPin<'b, [T]> for RepeatWith<F>
+impl<T, F> InitPin<[T]> for RepeatWith<F>
 where
     F: Fn(usize) -> T,
 {
     type Error = Infallible;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
@@ -349,24 +349,24 @@ where
     }
 }
 
-impl<'b, T, F> Init<'b, [T]> for RepeatWith<F>
+impl<T, F> Init<[T]> for RepeatWith<F>
 where
     F: Fn(usize) -> T,
 {
-    fn init(self, mut place: Uninit<'b, [T]>) -> InitResult<'b, [T], Infallible> {
+    fn init(self, mut place: Uninit<'_, [T]>) -> InitResult<'_, [T], Infallible> {
         place.write_with(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
     }
 }
 
-impl<'b, T, F, const N: usize> InitPin<'b, [T; N]> for RepeatWith<F>
+impl<T, F, const N: usize> InitPin<[T; N]> for RepeatWith<F>
 where
     F: Fn(usize) -> T,
 {
     type Error = Infallible;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, [T; N]>,
         slot: DropSlot<'a, 'b, [T; N]>,
@@ -377,11 +377,11 @@ where
     }
 }
 
-impl<'b, T, F, const N: usize> Init<'b, [T; N]> for RepeatWith<F>
+impl<T, F, const N: usize> Init<[T; N]> for RepeatWith<F>
 where
     F: Fn(usize) -> T,
 {
-    fn init(self, mut place: Uninit<'b, [T; N]>) -> InitResult<'b, [T; N], Infallible> {
+    fn init(self, mut place: Uninit<'_, [T; N]>) -> InitResult<'_, [T; N], Infallible> {
         maybe_uninit_slice(&mut place).write_with(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })

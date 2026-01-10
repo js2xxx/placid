@@ -12,10 +12,10 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Value<T>(T);
 
-impl<'b, T> InitPin<'b, T> for Value<T> {
+impl<T> InitPin<T> for Value<T> {
     type Error = Infallible;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -26,8 +26,8 @@ impl<'b, T> InitPin<'b, T> for Value<T> {
     }
 }
 
-impl<'b, T> Init<'b, T> for Value<T> {
-    fn init(self, mut place: Uninit<'b, T>) -> InitResult<'b, T, Infallible> {
+impl<T> Init<T> for Value<T> {
+    fn init(self, mut place: Uninit<'_, T>) -> InitResult<'_, T, Infallible> {
         (*place).write(self.0);
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
@@ -66,7 +66,7 @@ pub const fn value<T>(value: T) -> Value<T> {
     Value(value)
 }
 
-impl<'b, T> IntoInit<'b, T, Value<T>> for T {
+impl<T> IntoInit<T, Value<T>> for T {
     type Init = Value<T>;
     type Error = Infallible;
 
@@ -81,13 +81,13 @@ impl<'b, T> IntoInit<'b, T, Value<T>> for T {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TryWith<F>(F);
 
-impl<'b, T, E, F> InitPin<'b, T> for TryWith<F>
+impl<T, E, F> InitPin<T> for TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
 {
     type Error = E;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -99,11 +99,11 @@ where
     }
 }
 
-impl<'b, T, F, E> Init<'b, T> for TryWith<F>
+impl<T, F, E> Init<T> for TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
 {
-    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, T, E> {
+    fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, E> {
         match (self.0)() {
             Ok(value) => Ok(place.write(value)),
             Err(e) => Err(InitError { error: e, place }),
@@ -150,7 +150,7 @@ where
     TryWith(f)
 }
 
-impl<'b, T, E, F> IntoInit<'b, T, TryWith<F>> for F
+impl<T, E, F> IntoInit<T, TryWith<F>> for F
 where
     F: FnOnce() -> Result<T, E>,
 {
@@ -168,13 +168,13 @@ where
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct With<F>(F);
 
-impl<'b, T, F> InitPin<'b, T> for With<F>
+impl<T, F> InitPin<T> for With<F>
 where
     F: FnOnce() -> T,
 {
     type Error = Infallible;
 
-    fn init_pin<'a>(
+    fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
@@ -183,11 +183,11 @@ where
     }
 }
 
-impl<'b, T, F> Init<'b, T> for With<F>
+impl<T, F> Init<T> for With<F>
 where
     F: FnOnce() -> T,
 {
-    fn init(self, place: Uninit<'b, T>) -> InitResult<'b, T, Infallible> {
+    fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, Infallible> {
         place.try_write((self.0)())
     }
 }
@@ -224,7 +224,7 @@ where
     With(f)
 }
 
-impl<'b, T, F> IntoInit<'b, T, With<F>> for F
+impl<T, F> IntoInit<T, With<F>> for F
 where
     F: FnOnce() -> T,
 {
