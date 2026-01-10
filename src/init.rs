@@ -5,7 +5,7 @@
 //! various initializers and combinators for building complex initialization
 //! patterns.
 
-use core::{fmt, pin::Pin};
+use core::{convert::Infallible, fmt, pin::Pin};
 
 use crate::{
     Own, Uninit,
@@ -195,6 +195,79 @@ pub trait InitPin<T: ?Sized>: Sized {
     {
         or_else(self, f)
     }
+
+    /// Provides a fallback initializer if the primary one fails. The fallback
+    /// initializer must be infallible.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{own, Own, init::*};
+    ///
+    /// let owned: Own<u32> = own!(value(10u32).unwrap_or(20u32));
+    /// assert_eq!(*owned, 10);
+    ///
+    /// let failed: Own<u32> = own!(
+    ///     try_with(|| u32::try_from(-1i32)).unwrap_or(30u32)
+    /// );
+    /// assert_eq!(*failed, 30);
+    /// ```
+    fn unwrap_or<M, I2>(self, other: I2) -> UnwrapOr<Self, I2, M>
+    where
+        I2: IntoInit<T, M, Error = Infallible>,
+    {
+        unwrap_or(self, other)
+    }
+
+    /// Provides a fallback initializer computed from the error of the primary
+    /// one. The fallback initializer must be infallible.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{own, Own, init::*};
+    ///
+    /// let owned: Own<u32> = own!(
+    ///     try_with(|| u32::try_from(-1i32)).
+    ///         unwrap_or_else(|err| {
+    ///             println!("Initialization failed with error: {}", err);
+    ///             value(42u32)
+    ///         })
+    /// );
+    /// assert_eq!(*owned, 42);
+    /// ```
+    fn unwrap_or_else<F, I2>(self, f: F) -> UnwrapOrElse<Self, F>
+    where
+        F: FnOnce(Self::Error) -> I2,
+        I2: InitPin<T, Error = Infallible>,
+    {
+        unwrap_or_else(self, f)
+    }
+
+    /// Maps the error type of the initializer using a closure.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{uninit, init::*};
+    ///
+    /// let mut uninit = uninit!(i32);
+    /// let res = uninit.try_write(
+    ///     try_with(|| -> Result<_, &str> { Err("initialization failed") })
+    ///         .map_err(|e| format!("Error occurred: {}", e))
+    /// );
+    /// assert!(res.is_err());
+    /// assert_eq!(
+    ///     res.err().unwrap().error,
+    ///     "Error occurred: initialization failed"
+    /// );
+    /// ```
+    fn map_err<F, E2>(self, f: F) -> MapErr<Self, F>
+    where
+        F: FnOnce(Self::Error) -> E2,
+    {
+        map_err::<(), _, _, _, _>(self, f)
+    }
 }
 
 /// An error that occurs during initialization of a place.
@@ -306,10 +379,7 @@ pub trait Init<T: ?Sized>: InitPin<T> {
     /// let owned: Own<Vec<_>> = own!(value(vec![1, 2, 3]).and(|v| v.push(4)));
     /// assert_eq!(*owned, vec![1, 2, 3, 4]);
     /// ```
-    fn and<F: FnOnce(&mut T)>(self, f: F) -> And<Self, F>
-    where
-        T: Unpin,
-    {
+    fn and<F: FnOnce(&mut T)>(self, f: F) -> And<Self, F> {
         and(self, f)
     }
 }
@@ -363,7 +433,10 @@ pub trait StructuralInitPin<'b> {
         Self: 'a;
 
     #[doc(hidden)]
-    fn __builder_init_pin<'a>(place: Uninit<'a, Self>, slot: DropSlot<'a, 'b, Self>) -> Self::__BuilderInitPin<'a>
+    fn __builder_init_pin<'a>(
+        place: Uninit<'a, Self>,
+        slot: DropSlot<'a, 'b, Self>,
+    ) -> Self::__BuilderInitPin<'a>
     where
         Self: 'a;
 }
@@ -394,7 +467,9 @@ mod and;
 pub use self::and::{And, AndPin, and, and_pin};
 
 mod or;
-pub use self::or::{Or, OrElse, or, or_else};
+pub use self::or::{
+    MapErr, Or, OrElse, UnwrapOr, UnwrapOrElse, map_err, or, or_else, unwrap_or, unwrap_or_else,
+};
 
 mod raw;
 pub use self::raw::{Raw, RawPin, TryRaw, TryRawPin, raw, raw_pin, try_raw, try_raw_pin};

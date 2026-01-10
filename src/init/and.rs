@@ -20,7 +20,7 @@ pub struct And<I, F> {
 
 impl<T, I, F> InitPin<T> for And<I, F>
 where
-    T: ?Sized + Unpin,
+    T: ?Sized,
     I: Init<T>,
     F: FnOnce(&mut T),
 {
@@ -31,15 +31,18 @@ where
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
     ) -> InitPinResult<'a, 'b, T, I::Error> {
-        let mut own = self.init.init_pin(place, slot)?;
+        let mut own = match self.init.init(place) {
+            Ok(own) => own,
+            Err(e) => return Err(e.into_pin(slot)),
+        };
         (self.f)(&mut *own);
-        Ok(own)
+        Ok(crate::Own::into_pin(own, slot))
     }
 }
 
 impl<T, I, F> Init<T> for And<I, F>
 where
-    T: ?Sized + Unpin,
+    T: ?Sized,
     I: Init<T>,
     F: FnOnce(&mut T),
 {
@@ -60,7 +63,7 @@ where
 /// let owned: Own<Vec<_>> = own!(and(vec![1, 2, 3], |v| v.push(4)));
 /// assert_eq!(*owned, vec![1, 2, 3, 4]);
 /// ```
-pub fn and<M, I, F, T: ?Sized + Unpin>(init: I, f: F) -> And<I::Init, F>
+pub fn and<M, I, F, T: ?Sized>(init: I, f: F) -> And<I::Init, F>
 where
     I: IntoInit<T, M>,
     F: FnOnce(&mut T),
