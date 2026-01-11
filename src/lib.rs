@@ -304,7 +304,7 @@ pub mod prelude {
     //! ```
 
     pub use crate::{
-        init::{self, Init, InitPin, Initializer, IntoInit, init, init_pin},
+        init::{self, Init, InitPin, Initializer, IntoInit, IntoInitPin, init, init_pin},
         into_own, into_pown, own,
         owned::{IntoOwn, Own},
         pin::POwn,

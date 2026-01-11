@@ -1,10 +1,6 @@
 use core::{convert::Infallible, marker::PhantomData};
 
-use crate::{
-    init::{Init, InitPin, InitPinResult, InitResult, Initializer, IntoInit},
-    pin::DropSlot,
-    uninit::Uninit,
-};
+use crate::{init::*, pin::DropSlot, uninit::Uninit};
 
 /// Provides a fallback initializer if the primary one fails.
 ///
@@ -27,7 +23,7 @@ where
 impl<T: ?Sized, I1, M, I2> InitPin<T> for Or<I1, I2, M>
 where
     I1: InitPin<T>,
-    I2: IntoInit<T, M, Error: Into<I1::Error>>,
+    I2: IntoInitPin<T, M, Error: Into<I1::Error>>,
 {
     fn init_pin<'a, 'b>(
         self,
@@ -46,7 +42,7 @@ where
 impl<T: ?Sized, I1, M, I2> Init<T> for Or<I1, I2, M>
 where
     I1: Init<T>,
-    I2: IntoInit<T, M, Init: Init<T>, Error: Into<I1::Error>>,
+    I2: IntoInit<T, M, Error: Into<I1::Error>>,
 {
     fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, I1::Error> {
         match self.init1.init(place) {
@@ -80,7 +76,7 @@ where
 pub fn or<T: ?Sized, I1, I2, M2>(init1: I1, init2: I2) -> Or<I1, I2, M2>
 where
     I1: InitPin<T>,
-    I2: IntoInit<T, M2, Error: Into<I1::Error>>,
+    I2: IntoInitPin<T, M2, Error: Into<I1::Error>>,
 {
     Or {
         init1,
@@ -99,9 +95,11 @@ pub struct OrElse<I, F> {
     f: F,
 }
 
-impl<I, F> Initializer for OrElse<I, F>
+impl<I, F, I2> Initializer for OrElse<I, F>
 where
     I: Initializer,
+    F: FnOnce(I::Error) -> I2,
+    I2: Initializer<Error: Into<I::Error>>,
 {
     type Error = I::Error;
 }
@@ -156,11 +154,11 @@ where
 /// ));
 /// assert_eq!(*owned, 42);
 /// ```
-pub const fn or_else<T: ?Sized, I1, F, I2>(init1: I1, f: F) -> OrElse<I1, F>
+pub const fn or_else<I1, F, I2>(init1: I1, f: F) -> OrElse<I1, F>
 where
-    I1: InitPin<T>,
+    I1: Initializer,
     F: FnOnce(I1::Error) -> I2,
-    I2: InitPin<T, Error: Into<I1::Error>>,
+    I2: Initializer<Error: Into<I1::Error>>,
 {
     OrElse { init1, f }
 }
@@ -177,14 +175,17 @@ pub struct UnwrapOr<I1, I2, M> {
     marker: PhantomData<M>,
 }
 
-impl<I1, I2, M> Initializer for UnwrapOr<I1, I2, M> {
+impl<I1, I2, M> Initializer for UnwrapOr<I1, I2, M>
+where
+    I1: Initializer,
+{
     type Error = Infallible;
 }
 
 impl<T: ?Sized, I1, M, I2> InitPin<T> for UnwrapOr<I1, I2, M>
 where
     I1: InitPin<T>,
-    I2: IntoInit<T, M, Error = Infallible>,
+    I2: IntoInitPin<T, M, Error = Infallible>,
 {
     fn init_pin<'a, 'b>(
         self,
@@ -201,7 +202,7 @@ where
 impl<T: ?Sized, I1, M, I2> Init<T> for UnwrapOr<I1, I2, M>
 where
     I1: Init<T>,
-    I2: IntoInit<T, M, Init: Init<T>, Error = Infallible>,
+    I2: IntoInit<T, M, Error = Infallible>,
 {
     fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, Infallible> {
         match self.init1.init(place) {
@@ -231,10 +232,10 @@ where
 /// ));
 /// assert_eq!(*failed, 30);
 /// ```
-pub fn unwrap_or<T: ?Sized, I1, I2, M2>(init1: I1, init2: I2) -> UnwrapOr<I1, I2, M2>
+pub const fn unwrap_or<T: ?Sized, I1, I2, M2>(init1: I1, init2: I2) -> UnwrapOr<I1, I2, M2>
 where
-    I1: InitPin<T>,
-    I2: IntoInit<T, M2, Error = Infallible>,
+    I1: Initializer,
+    I2: IntoInitPin<T, M2, Error = Infallible>,
 {
     UnwrapOr {
         init1,
@@ -254,7 +255,12 @@ pub struct UnwrapOrElse<I, F> {
     f: F,
 }
 
-impl<I, F> Initializer for UnwrapOrElse<I, F> {
+impl<I1, F, I2> Initializer for UnwrapOrElse<I1, F>
+where
+    I1: Initializer,
+    F: FnOnce(I1::Error) -> I2,
+    I2: Initializer<Error = Infallible>,
+{
     type Error = Infallible;
 }
 
@@ -305,19 +311,19 @@ where
 /// ));
 /// assert_eq!(*owned, 42);
 /// ```
-pub const fn unwrap_or_else<T: ?Sized, I1, F, I2>(init1: I1, f: F) -> UnwrapOrElse<I1, F>
+pub const fn unwrap_or_else<I1, F, I2>(init1: I1, f: F) -> UnwrapOrElse<I1, F>
 where
-    I1: InitPin<T>,
+    I1: Initializer,
     F: FnOnce(I1::Error) -> I2,
-    I2: InitPin<T, Error = Infallible>,
+    I2: Initializer<Error = Infallible>,
 {
     UnwrapOrElse { init1, f }
 }
 
 /// Maps the error type of an initializer using a closure.
 ///
-/// This initializer is created by calling the [`InitPin::map_err`] methods, or
-/// by using the [`map_err()`] factory function.
+/// This initializer is created by calling the [`Initializer::map_err`] methods,
+/// or by using the [`map_err()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct MapErr<I, F> {
     init: I,

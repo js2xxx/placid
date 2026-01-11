@@ -46,7 +46,7 @@ impl<'a, T: ?Sized> InitCell<'a, T, false> {
         init: A,
     ) -> Result<InitCell<'a, T, true>, InitError<'a, Cell<T>, E>>
     where
-        A: IntoInit<T, M, Init: Init<T>, Error = E>,
+        A: IntoInit<T, M, Error = E>,
     {
         let init = init.into_init();
         let field_place = unsafe { Uninit::from_raw(self.uninit.as_mut_ptr() as *mut T) };
@@ -126,7 +126,7 @@ impl<'a, 'b, T: ?Sized> InitPinCell<'a, 'b, T, false> {
         init: A,
     ) -> Result<InitPinCell<'a, 'b, T, true>, InitPinError<'a, 'b, Cell<T>, E>>
     where
-        A: IntoInit<T, M, Error = E>,
+        A: IntoInitPin<T, M, Error = E>,
     {
         let init = init.into_init();
         let mut slot = mem::ManuallyDrop::new(crate::pin::DroppingSlot::new());
@@ -222,7 +222,7 @@ impl<'a, T: ?Sized> InitUnsafeCell<'a, T, false> {
         init: A,
     ) -> Result<InitUnsafeCell<'a, T, true>, InitError<'a, UnsafeCell<T>, E>>
     where
-        A: IntoInit<T, M, Init: Init<T>, Error = E>,
+        A: IntoInit<T, M, Error = E>,
     {
         let init = init.into_init();
         let field_place = unsafe { Uninit::from_raw(self.uninit.as_mut_ptr() as *mut T) };
@@ -302,7 +302,7 @@ impl<'a, 'b, T: ?Sized> InitPinUnsafeCell<'a, 'b, T, false> {
         init: A,
     ) -> Result<InitPinUnsafeCell<'a, 'b, T, true>, InitPinError<'a, 'b, UnsafeCell<T>, E>>
     where
-        A: IntoInit<T, M, Error = E>,
+        A: IntoInitPin<T, M, Error = E>,
     {
         let init = init.into_init();
         let mut slot = mem::ManuallyDrop::new(crate::pin::DroppingSlot::new());

@@ -89,7 +89,7 @@ unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
 impl<T: ?Sized> Mutex<T> {
     pub const fn new<I, M>(data: I) -> impl InitPin<Self, Error = Error>
     where
-        I: IntoInit<T, M, Error: std::error::Error + Send + Sync + 'static>,
+        I: IntoInitPin<T, M, Error: std::error::Error + Send + Sync + 'static>,
     {
         init_pin!(Mutex {
             raw: RawMutex::new(),

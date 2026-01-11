@@ -1,7 +1,7 @@
 use core::pin::Pin;
 
 use crate::{
-    init::{Init, InitPin, InitPinResult, InitResult, Initializer, IntoInit},
+    init::{Init, InitPin, InitPinResult, InitResult, Initializer, IntoInit, IntoInitPin},
     owned::Own,
     pin::DropSlot,
     uninit::Uninit,
@@ -130,7 +130,7 @@ where
 /// ```
 pub fn and_pin<M, I, F, T: ?Sized>(init: I, f: F) -> AndPin<I::Init, F>
 where
-    I: IntoInit<T, M>,
+    I: IntoInitPin<T, M>,
     F: FnOnce(Pin<&mut T>),
 {
     AndPin { init: init.into_init(), f }

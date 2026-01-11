@@ -4,7 +4,7 @@ use core::{
 };
 
 use crate::{
-    init::{Init, InitError, InitPin, InitPinResult, InitResult, Initializer, IntoInit},
+    init::{Init, InitError, InitPin, InitPinResult, InitResult, Initializer, IntoInitPin},
     owned::Own,
     pin::DropSlot,
     uninit::Uninit,
@@ -85,7 +85,7 @@ impl<T: Copy> SpecInitSlice<T> for &[T] {
 /// Initializes a slice by copying or cloning elements from a source slice.
 ///
 /// This initializer is created by the [`slice()`] factory function or through
-/// the [`IntoInit`] trait for slice types.
+/// the [`IntoInitPin`] trait for slice types.
 #[derive(Debug, PartialEq)]
 pub struct Slice<'a, T>(&'a [T]);
 
@@ -139,8 +139,8 @@ impl<T: Clone, const N: usize> Init<[T; N]> for Slice<'_, T> {
 /// will fail with a [`SliceError`].
 ///
 /// This function is rarely used for direct initialization. Instead, use an
-/// `&[T]` slice directly where an initializer is expected, as it implements
-/// the [`IntoInit`] trait. Use this function for combining with other
+/// `&[T]` slice directly where an initializer is expected, as `&[T]` can be
+/// used directly as an initializer. Use this function for combining with other
 /// initializers when needed.
 ///
 /// # Examples
@@ -168,7 +168,7 @@ pub const fn slice<T: Clone>(s: &[T]) -> Slice<'_, T> {
     Slice(s)
 }
 
-impl<'a, T: Clone> IntoInit<[T], Slice<'a, T>> for &'a [T] {
+impl<'a, T: Clone> IntoInitPin<[T], Slice<'a, T>> for &'a [T] {
     type Init = Slice<'a, T>;
     type Error = SliceError;
 
@@ -177,7 +177,7 @@ impl<'a, T: Clone> IntoInit<[T], Slice<'a, T>> for &'a [T] {
     }
 }
 
-impl<'a, T: Clone, const N: usize> IntoInit<[T; N], Slice<'a, T>> for &'a [T] {
+impl<'a, T: Clone, const N: usize> IntoInitPin<[T; N], Slice<'a, T>> for &'a [T] {
     type Init = Slice<'a, T>;
     type Error = SliceError;
 
@@ -232,9 +232,9 @@ impl Init<str> for Str<'_> {
 /// contents from another string slice. The source and target slices must have
 /// the same length, or the initialization will fail with a [`SliceError`].
 ///
-/// Users typically do not need to call this function directly, as `&str`
-/// implements the [`IntoInit`] trait. Use this function when combining with
-/// other initializers.
+/// Users typically do not need to call this function directly, as `&str` can be
+/// used directly as an initializer. Use this function when combining with other
+/// initializers.
 ///
 /// # Examples
 ///
@@ -250,7 +250,7 @@ pub const fn str(s: &str) -> Str<'_> {
     Str(s)
 }
 
-impl<'b> IntoInit<str, Str<'b>> for &'b str {
+impl<'b> IntoInitPin<str, Str<'b>> for &'b str {
     type Init = Str<'b>;
     type Error = SliceError;
 

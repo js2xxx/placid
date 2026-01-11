@@ -4,7 +4,7 @@
 use core::{alloc::Allocator, fmt, ops::Deref, pin::Pin};
 
 use crate::{
-    init::{Init, IntoInit},
+    init::{IntoInit, IntoInitPin},
     place::Place,
 };
 
@@ -83,7 +83,6 @@ macro_rules! place_construct {
                 I: IntoInit<
                     place_construct![@TARGET $($target)?],
                     M,
-                    Init: Init<place_construct![@TARGET $($target)?]>
                 >,
                 I::Error: From<Self::Error>,
             {
@@ -98,7 +97,6 @@ macro_rules! place_construct {
                 I: IntoInit<
                     place_construct![@TARGET $($target)?],
                     M,
-                    Init: Init<place_construct![@TARGET $($target)?]>,
                     Error: fmt::Debug
                 >,
             {
@@ -109,7 +107,7 @@ macro_rules! place_construct {
             fn $try_pin<M, I>($($($arg_name: $arg_ty,)*)? init: I) -> Result<Pin<Self>, I::Error>
             where
                 Self: Deref,
-                I: IntoInit<place_construct![@TARGET $($target)?], M>,
+                I: IntoInitPin<place_construct![@TARGET $($target)?], M>,
                 I::Error: From<Self::Error>,
             {
                 let place = Self::try_new_uninit_in(($($($arg_name),*)?))?;
@@ -121,7 +119,7 @@ macro_rules! place_construct {
             where
                 Self: Deref,
                 Self::Error: fmt::Debug,
-                I: IntoInit<place_construct![@TARGET $($target)?], M, Error: fmt::Debug>,
+                I: IntoInitPin<place_construct![@TARGET $($target)?], M, Error: fmt::Debug>,
             {
                 Self::new_uninit_in(($($($arg_name),*)?)).init_pin(init)
             }

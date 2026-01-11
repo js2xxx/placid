@@ -11,7 +11,7 @@ use core::{
 };
 
 use crate::{
-    init::{Init, InitPin, InitPinResult, InitResult, IntoInit},
+    init::{Init, InitPin, InitPinResult, InitResult, IntoInit, IntoInitPin},
     owned::Own,
     pin::{DropSlot, POwn},
     place::{Place, PlaceRef, Uninitialized},
@@ -288,9 +288,9 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// let owned = uninit.write(String::from("Initialized!"));
     /// assert_eq!(&*owned, "Initialized!");
     /// ```
-    pub fn write<I, Marker>(self, init: I) -> Own<'a, T>
+    pub fn write<I, M>(self, init: I) -> Own<'a, T>
     where
-        I: IntoInit<T, Marker, Init: Init<T>, Error: fmt::Debug>,
+        I: IntoInit<T, M, Error: fmt::Debug>,
     {
         self.try_write(init).unwrap()
     }
@@ -309,9 +309,9 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// let result = uninit.try_write(42);
     /// assert!(result.is_ok());
     /// ```
-    pub fn try_write<I, Marker>(self, init: I) -> InitResult<'a, T, I::Error>
+    pub fn try_write<I, M>(self, init: I) -> InitResult<'a, T, I::Error>
     where
-        I: IntoInit<T, Marker, Init: Init<T>>,
+        I: IntoInit<T, M>,
     {
         init.into_init().init(self)
     }
@@ -332,9 +332,9 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// // The value is now pinned and initialized
     /// assert_eq!(&*pinned, "Pinned value");
     /// ```
-    pub fn write_pin<'b, I, Marker>(self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
+    pub fn write_pin<'b, I, M>(self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
-        I: IntoInit<T, Marker, Error: fmt::Debug>,
+        I: IntoInitPin<T, M, Error: fmt::Debug>,
     {
         self.try_write_pin(init, slot).unwrap()
     }
@@ -354,13 +354,13 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// let result = uninit.try_write_pin(vec![1, 2, 3], drop_slot);
     /// assert!(result.is_ok());
     /// ```
-    pub fn try_write_pin<'b, I, Marker>(
+    pub fn try_write_pin<'b, I, M>(
         self,
         init: I,
         slot: DropSlot<'a, 'b, T>,
     ) -> InitPinResult<'a, 'b, T, I::Error>
     where
-        I: IntoInit<T, Marker>,
+        I: IntoInitPin<T, M>,
     {
         init.into_init().init_pin(self, slot)
     }

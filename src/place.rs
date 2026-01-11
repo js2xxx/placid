@@ -17,7 +17,7 @@ use core::{
 
 use self::construct::PlaceConstruct;
 use crate::{
-    init::{Init, IntoInit},
+    init::{IntoInit, IntoInitPin},
     owned::Own,
     pin::{DropSlot, POwn},
     sealed,
@@ -98,7 +98,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn write<'b, M, I>(&'b mut self, init: I) -> Own<'b, T>
     where
-        I: IntoInit<T, M, Init: Init<T>, Error: fmt::Debug>,
+        I: IntoInit<T, M, Error: fmt::Debug>,
     {
         Uninit::from_mut(self).write(init)
     }
@@ -124,7 +124,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn write_pin<'a, 'b, M, I>(&'a mut self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
-        I: IntoInit<T, M, Error: fmt::Debug>,
+        I: IntoInitPin<T, M, Error: fmt::Debug>,
     {
         Uninit::from_mut(self).write_pin(init, slot)
     }
@@ -149,7 +149,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn init<M, I, E>(self, init: I) -> Self::Init
     where
-        I: IntoInit<T, M, Init: Init<T>, Error = E>,
+        I: IntoInit<T, M, Error = E>,
         E: fmt::Debug,
     {
         self.try_init(init).map_err(|(e, _)| e).unwrap()
@@ -184,7 +184,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn try_init<M, I, E>(mut self, init: I) -> Result<Self::Init, (E, Self)>
     where
-        I: IntoInit<T, M, Init: Init<T>, Error = E>,
+        I: IntoInit<T, M, Error = E>,
     {
         'ok: {
             let err = match Uninit::from_mut(&mut self).try_write(init) {
@@ -219,7 +219,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn init_pin<M, I, E>(self, init: I) -> Pin<Self::Init>
     where
-        I: IntoInit<T, M, Error = E>,
+        I: IntoInitPin<T, M, Error = E>,
         Self::Init: Deref,
         E: fmt::Debug,
     {
@@ -254,7 +254,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// ```
     fn try_init_pin<M, I, E>(mut self, init: I) -> Result<Pin<Self::Init>, (E, Self)>
     where
-        I: IntoInit<T, M, Error = E>,
+        I: IntoInitPin<T, M, Error = E>,
         Self::Init: Deref,
     {
         'ok: {

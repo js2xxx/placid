@@ -224,7 +224,7 @@ pub trait InitPin<T: ?Sized>: Initializer {
     /// ```
     fn or<M, I2>(self, other: I2) -> Or<Self, I2, M>
     where
-        I2: IntoInit<T, M, Error: Into<Self::Error>>,
+        I2: IntoInitPin<T, M, Error: Into<Self::Error>>,
     {
         or(self, other)
     }
@@ -272,7 +272,7 @@ pub trait InitPin<T: ?Sized>: Initializer {
     /// ```
     fn unwrap_or<M, I2>(self, other: I2) -> UnwrapOr<Self, I2, M>
     where
-        I2: IntoInit<T, M, Error = Infallible>,
+        I2: IntoInitPin<T, M, Error = Infallible>,
     {
         unwrap_or(self, other)
     }
@@ -417,15 +417,20 @@ pub trait Init<T: ?Sized>: InitPin<T> {
     }
 }
 
-/// A trait for converting a value into an initializer.
+/// A trait for converting a value into a pin-initializer for type `T`.
 ///
 /// This trait is used to allow types to be directly used as initializers
 /// without needing to wrap them in a specific initializer factory function.
+///
+/// There does not exist a trait called `IntoInitializer`, which seems to be a
+/// natural extension for the `Initializer`, `InitPin`, and `Init` subtrait
+/// chain. This is because `Marker` and the target type `T` cannot be separated
+/// for correct type inference.
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` is not an initializer for places of type `{T}`",
-    label = "`{Self}` is not an initializer for type `{T}`"
+    message = "`{Self}` is not a pin-initializer for places of type `{T}`",
+    label = "`{Self}` is not a pin-initializer for type `{T}`"
 )]
-pub trait IntoInit<T: ?Sized, Marker = ()>: Sized {
+pub trait IntoInitPin<T: ?Sized, Marker = ()>: Sized {
     /// Which kind of initializer this converts into?
     type Init: InitPin<T, Error = Self::Error>;
     /// The error type that can occur during initialization.
@@ -435,13 +440,35 @@ pub trait IntoInit<T: ?Sized, Marker = ()>: Sized {
     fn into_init(self) -> Self::Init;
 }
 
-impl<I: InitPin<T>, T: ?Sized> IntoInit<T> for I {
+impl<T: ?Sized, I: InitPin<T>> IntoInitPin<T> for I {
     type Init = I;
     type Error = I::Error;
 
     fn into_init(self) -> Self::Init {
         self
     }
+}
+
+/// A trait for converting a value into an initializer for type `T`.
+///
+/// This trait is used to allow types to be directly used as initializers
+/// without needing to wrap them in a specific initializer factory function.
+///
+/// This trait is automatically implemented for any type that implements
+/// [`IntoInitPin`] with an initializer that also implements [`Init`].
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not an initializer for places of type `{T}`",
+    label = "`{Self}` is not an initializer for type `{T}`"
+)]
+pub trait IntoInit<T: ?Sized, Marker = ()>:
+    IntoInitPin<T, Marker, Init: Init<T, Error = Self::Error>>
+{
+}
+impl<T, Marker, I> IntoInit<T, Marker> for I
+where
+    T: ?Sized,
+    I: IntoInitPin<T, Marker, Init: Init<T, Error = Self::Error>>,
+{
 }
 
 // Factory functions & adapters

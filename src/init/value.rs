@@ -2,7 +2,7 @@ use core::convert::Infallible;
 
 use crate::{
     init::{
-        Init, InitError, InitPin, InitPinError, InitPinResult, InitResult, Initializer, IntoInit,
+        Init, InitError, InitPin, InitPinError, InitPinResult, InitResult, Initializer, IntoInitPin,
     },
     pin::DropSlot,
     uninit::Uninit,
@@ -46,8 +46,7 @@ impl<T> Init<T> for Value<T> {
 /// The value is moved into the place and cannot fail.
 ///
 /// This is typically not needed directly, as all types that implement `Clone`
-/// automatically implement `IntoInit` for `Value<T>`, allowing their objects to
-/// be used directly as initializers.
+/// can be used directly as initializers.
 ///
 /// ```rust
 /// use placid::prelude::*;
@@ -74,7 +73,7 @@ pub const fn value<T>(value: T) -> Value<T> {
     Value(value)
 }
 
-impl<T: Clone> IntoInit<T, Value<T>> for T {
+impl<T: Clone> IntoInitPin<T, Value<T>> for T {
     type Init = Value<T>;
     type Error = Infallible;
 
@@ -174,7 +173,7 @@ where
     TryWith(f)
 }
 
-impl<T, E, F> IntoInit<T, TryWith<F>> for F
+impl<T, E, F> IntoInitPin<T, TryWith<F>> for F
 where
     F: FnOnce() -> Result<T, E>,
 {
@@ -258,7 +257,7 @@ where
     With(f)
 }
 
-impl<T, F> IntoInit<T, With<F>> for F
+impl<T, F> IntoInitPin<T, With<F>> for F
 where
     F: FnOnce() -> T,
 {

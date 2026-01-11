@@ -283,10 +283,20 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
         };
 
         let init_bound = if pinned && field_pinned {
-            quote_spanned! { mixed_site => }
+            quote_spanned! { mixed_site =>
+                ::placid::init::IntoInitPin<
+                    #ty,
+                    #marker_ident,
+                    Error = #error_ident,
+                >
+            }
         } else {
             quote_spanned! { mixed_site =>
-                Init: ::placid::init::Init<#ty>,
+                ::placid::init::IntoInit<
+                    #ty,
+                    #marker_ident,
+                    Error = #error_ident,
+                >
             }
         };
 
@@ -344,12 +354,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                 >,
             >
             where
-                #arg_ident: ::placid::init::IntoInit<
-                    #ty,
-                    #marker_ident,
-                    #init_bound
-                    Error = #error_ident,
-                >,
+                #arg_ident: #init_bound,
             {
                 use ::placid::init::{InitPin, Init};
                 let init = init.into_init();
