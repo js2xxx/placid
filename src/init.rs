@@ -44,6 +44,7 @@ pub trait Initializer: Sized {
     ///     "Error occurred: initialization failed"
     /// );
     /// ```
+    #[inline]
     fn map_err<F, E2>(self, f: F) -> MapErr<Self, F>
     where
         F: FnOnce(Self::Error) -> E2,
@@ -65,6 +66,7 @@ pub trait Initializer: Sized {
     /// let owned: Own<u32> = own!(init::value(100u32).adapt_err::<TryFromIntError>());
     /// assert_eq!(*owned, 100);
     /// ```
+    #[inline]
     fn adapt_err<E2>(self) -> MapErr<Self, impl FnOnce(Self::Error) -> E2>
     where
         Self: Initializer<Error = Infallible>,
@@ -88,12 +90,14 @@ pub struct InitPinError<'a, 'b, T: ?Sized, E> {
 
 impl<'a, 'b, T: ?Sized, E> InitPinError<'a, 'b, T, E> {
     /// Creates a new `InitPinError`.
+    #[inline]
     pub const fn new(error: E, place: Uninit<'a, T>, slot: DropSlot<'a, 'b, T>) -> Self {
         InitPinError { error, place, slot }
     }
 
     /// Maps the error contained in this `InitPinError` to a different error
     /// type.
+    #[inline]
     pub fn map<F, E2>(self, f: F) -> InitPinError<'a, 'b, T, E2>
     where
         F: FnOnce(E) -> E2,
@@ -200,6 +204,7 @@ pub trait InitPin<T: ?Sized>: Initializer {
     /// );
     /// assert_eq!(*owned, [1, 2, 3, 4]);
     /// ```
+    #[inline]
     fn and_pin<F: FnOnce(Pin<&mut T>)>(self, f: F) -> AndPin<Self, F> {
         and_pin(self, f)
     }
@@ -222,6 +227,7 @@ pub trait InitPin<T: ?Sized>: Initializer {
     /// let failed: Own<u32> = own!(init::try_with(|| u32::try_from(-1i32)).or(30u32));
     /// assert_eq!(*failed, 30);
     /// ```
+    #[inline]
     fn or<M, I2>(self, other: I2) -> Or<Self, I2, M>
     where
         I2: IntoInitPin<T, M, Error: Into<Self::Error>>,
@@ -246,6 +252,7 @@ pub trait InitPin<T: ?Sized>: Initializer {
     /// }));
     /// assert_eq!(*owned, 42);
     /// ```
+    #[inline]
     fn or_else<F, I2>(self, f: F) -> OrElse<Self, F>
     where
         F: FnOnce(Self::Error) -> I2,
@@ -270,6 +277,7 @@ pub trait InitPin<T: ?Sized>: Initializer {
     /// );
     /// assert_eq!(*failed, 30);
     /// ```
+    #[inline]
     fn unwrap_or<M, I2>(self, other: I2) -> UnwrapOr<Self, I2, M>
     where
         I2: IntoInitPin<T, M, Error = Infallible>,
@@ -294,6 +302,7 @@ pub trait InitPin<T: ?Sized>: Initializer {
     /// );
     /// assert_eq!(*owned, 42);
     /// ```
+    #[inline]
     fn unwrap_or_else<F, I2>(self, f: F) -> UnwrapOrElse<Self, F>
     where
         F: FnOnce(Self::Error) -> I2,
@@ -316,11 +325,13 @@ pub struct InitError<'a, T: ?Sized, E> {
 
 impl<'a, T: ?Sized, E> InitError<'a, T, E> {
     /// Creates a new `InitError`.
+    #[inline]
     pub const fn new(error: E, place: Uninit<'a, T>) -> Self {
         InitError { error, place }
     }
 
     /// Converts this error into an `InitPinError` by adding a drop slot.
+    #[inline]
     pub fn into_pin<'b>(self, slot: DropSlot<'a, 'b, T>) -> InitPinError<'a, 'b, T, E> {
         InitPinError {
             error: self.error,
@@ -330,6 +341,7 @@ impl<'a, T: ?Sized, E> InitError<'a, T, E> {
     }
 
     /// Maps the error contained in this `InitError` to a different error type.
+    #[inline]
     pub fn map<F, E2>(self, f: F) -> InitError<'a, T, E2>
     where
         F: FnOnce(E) -> E2,
@@ -342,6 +354,7 @@ impl<'a, T: ?Sized, E> InitError<'a, T, E> {
 }
 
 impl<'a, 'b, T: ?Sized, E> From<InitPinError<'a, 'b, T, E>> for InitError<'a, T, E> {
+    #[inline]
     fn from(err: InitPinError<'a, 'b, T, E>) -> Self {
         InitError {
             error: err.error,
@@ -351,6 +364,7 @@ impl<'a, 'b, T: ?Sized, E> From<InitPinError<'a, 'b, T, E>> for InitError<'a, T,
 }
 
 impl<'a, T: ?Sized, E: fmt::Debug> fmt::Debug for InitError<'a, T, E> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Error")
             .field("error", &self.error)
@@ -412,6 +426,7 @@ pub trait Init<T: ?Sized>: InitPin<T> {
     /// let owned: Own<Vec<_>> = own!(init::value(vec![1, 2, 3]).and(|v| v.push(4)));
     /// assert_eq!(*owned, vec![1, 2, 3, 4]);
     /// ```
+    #[inline]
     fn and<F: FnOnce(&mut T)>(self, f: F) -> And<Self, F> {
         and(self, f)
     }
@@ -444,6 +459,7 @@ impl<T: ?Sized, I: InitPin<T>> IntoInitPin<T> for I {
     type Init = I;
     type Error = I::Error;
 
+    #[inline]
     fn into_init(self) -> Self::Init {
         self
     }

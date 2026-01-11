@@ -77,6 +77,7 @@ impl<T: Clone> IntoInitPin<T, Value<T>> for T {
     type Init = Value<T>;
     type Error = Infallible;
 
+    #[inline]
     fn into_init(self) -> Self::Init {
         Value(self)
     }

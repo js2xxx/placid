@@ -24,6 +24,7 @@ impl<T: ?Sized, F, E> InitPin<T> for TryRawPin<F, T, E>
 where
     F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> InitPinResult<'a, 'b, T, E>,
 {
+    #[inline]
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -42,6 +43,7 @@ where
 ///
 /// This is rarely needed for typical use cases and is primarily useful for
 /// implementing custom initializers or library-level primitives.
+#[inline]
 pub const fn try_raw_pin<T: ?Sized, E, F>(f: F) -> TryRawPin<F, T, E>
 where
     F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> InitPinResult<'a, 'b, T, E>,
@@ -63,6 +65,7 @@ impl<T: ?Sized, F, E> InitPin<T> for TryRaw<F, T, E>
 where
     F: FnOnce(Uninit<'_, T>) -> InitResult<'_, T, E>,
 {
+    #[inline]
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -79,6 +82,7 @@ impl<T: ?Sized, F, E> Init<T> for TryRaw<F, T, E>
 where
     F: FnOnce(Uninit<'_, T>) -> InitResult<'_, T, E>,
 {
+    #[inline]
     fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, E> {
         (self.0)(place)
     }
@@ -93,6 +97,7 @@ where
 ///
 /// This is rarely needed for typical use cases and is primarily useful for
 /// implementing custom initializers or library-level primitives.
+#[inline]
 pub const fn try_raw<T, E, F>(f: F) -> TryRaw<F, T, E>
 where
     F: FnOnce(Uninit<'_, T>) -> InitResult<'_, T, E>,
@@ -115,6 +120,7 @@ impl<T: ?Sized, F> InitPin<T> for RawPin<F, T>
 where
     F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
 {
+    #[inline]
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -132,6 +138,7 @@ where
 ///
 /// This is primarily useful for implementing custom initializers that combine
 /// the flexibility of raw access with pinned semantics.
+#[inline]
 pub const fn raw_pin<T: ?Sized, F>(f: F) -> RawPin<F, T>
 where
     F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
@@ -153,6 +160,7 @@ impl<T: ?Sized, F> InitPin<T> for Raw<F, T>
 where
     F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
 {
+    #[inline]
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -166,6 +174,7 @@ impl<T: ?Sized, F> Init<T> for Raw<F, T>
 where
     F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
 {
+    #[inline]
     fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, Infallible> {
         Ok((self.0)(place))
     }
@@ -178,6 +187,7 @@ where
 ///
 /// This is primarily useful for implementing custom initializers that combine
 /// the flexibility of raw access with infallible semantics.
+#[inline]
 pub const fn raw<T: ?Sized, F>(f: F) -> Raw<F, T>
 where
     F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,

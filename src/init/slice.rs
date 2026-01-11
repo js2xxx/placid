@@ -94,6 +94,7 @@ impl<T> Initializer for Slice<'_, T> {
 }
 
 impl<T: Clone> InitPin<[T]> for Slice<'_, T> {
+    #[inline]
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, [T]>,
@@ -107,12 +108,14 @@ impl<T: Clone> InitPin<[T]> for Slice<'_, T> {
 }
 
 impl<T: Clone> Init<[T]> for Slice<'_, T> {
+    #[inline]
     fn init(self, place: Uninit<'_, [T]>) -> InitResult<'_, [T], SliceError> {
         self.0.init_slice(place)
     }
 }
 
 impl<T: Clone, const N: usize> InitPin<[T; N]> for Slice<'_, T> {
+    #[inline]
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, [T; N]>,
@@ -126,6 +129,7 @@ impl<T: Clone, const N: usize> InitPin<[T; N]> for Slice<'_, T> {
 }
 
 impl<T: Clone, const N: usize> Init<[T; N]> for Slice<'_, T> {
+    #[inline]
     fn init(self, place: Uninit<'_, [T; N]>) -> InitResult<'_, [T; N], SliceError> {
         self.0.init_array(place)
     }
@@ -164,6 +168,7 @@ impl<T: Clone, const N: usize> Init<[T; N]> for Slice<'_, T> {
 /// let result = uninit.try_write(&source[..]);
 /// assert!(result.is_err()); // Fails because lengths don't match
 /// ```
+#[inline]
 pub const fn slice<T: Clone>(s: &[T]) -> Slice<'_, T> {
     Slice(s)
 }
@@ -172,6 +177,7 @@ impl<'a, T: Clone> IntoInitPin<[T], Slice<'a, T>> for &'a [T] {
     type Init = Slice<'a, T>;
     type Error = SliceError;
 
+    #[inline]
     fn into_init(self) -> Self::Init {
         Slice(self)
     }
@@ -181,6 +187,7 @@ impl<'a, T: Clone, const N: usize> IntoInitPin<[T; N], Slice<'a, T>> for &'a [T]
     type Init = Slice<'a, T>;
     type Error = SliceError;
 
+    #[inline]
     fn into_init(self) -> Self::Init {
         Slice(self)
     }
@@ -246,6 +253,7 @@ impl Init<str> for Str<'_> {
 /// let owned = uninit.write(source);
 /// assert_eq!(&*owned, "Hello, world!");
 /// ```
+#[inline]
 pub const fn str(s: &str) -> Str<'_> {
     Str(s)
 }
@@ -254,6 +262,7 @@ impl<'b> IntoInitPin<str, Str<'b>> for &'b str {
     type Init = Str<'b>;
     type Error = SliceError;
 
+    #[inline]
     fn into_init(self) -> Self::Init {
         Str(self)
     }
@@ -325,6 +334,7 @@ impl<T: Clone, const N: usize> Init<[T; N]> for Repeat<T> {
 /// let owned = place.write(init::repeat(5));
 /// assert_eq!(*owned, [5, 5, 5]);
 /// ```
+#[inline]
 pub const fn repeat<T: Clone>(value: T) -> Repeat<T> {
     Repeat(value)
 }
@@ -407,6 +417,7 @@ where
 /// let owned = uninit.write(init::repeat_with(|i| i * 2));
 /// assert_eq!(&*owned, &[0, 2, 4, 6, 8]);
 /// ```
+#[inline]
 pub const fn repeat_with<T, F>(f: F) -> RepeatWith<F>
 where
     F: Fn(usize) -> T,

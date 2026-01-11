@@ -96,6 +96,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// let owned = Place::write(&mut place, 42);
     /// assert_eq!(*owned, 42);
     /// ```
+    #[inline]
     fn write<'b, M, I>(&'b mut self, init: I) -> Own<'b, T>
     where
         I: IntoInit<T, M, Error: fmt::Debug>,
@@ -122,6 +123,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// let owned = Place::write_pin(&mut place, 42, drop_slot);
     /// assert_eq!(*owned, 42);
     /// ```
+    #[inline]
     fn write_pin<'a, 'b, M, I>(&'a mut self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
         I: IntoInitPin<T, M, Error: fmt::Debug>,
@@ -147,6 +149,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// let p = Box::<i32>::new_uninit().init(|| 42);
     /// assert_eq!(*p, 42);
     /// ```
+    #[inline]
     fn init<M, I, E>(self, init: I) -> Self::Init
     where
         I: IntoInit<T, M, Error = E>,
@@ -182,6 +185,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// let result = p.try_init(|| Err::<i32, &str>("failed"));
     /// assert!(result.is_err());
     /// ```
+    #[inline]
     fn try_init<M, I, E>(mut self, init: I) -> Result<Self::Init, (E, Self)>
     where
         I: IntoInit<T, M, Error = E>,
@@ -217,6 +221,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// let place = Box::<i32>::new_uninit().init_pin(|| 42);
     /// assert_eq!(*place, 42);
     /// ```
+    #[inline]
     fn init_pin<M, I, E>(self, init: I) -> Pin<Self::Init>
     where
         I: IntoInitPin<T, M, Error = E>,
@@ -252,6 +257,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// let result = place.try_init_pin(|| Err::<i32, &str>("failed"));
     /// assert!(result.is_err());
     /// ```
+    #[inline]
     fn try_init_pin<M, I, E>(mut self, init: I) -> Result<Pin<Self::Init>, (E, Self)>
     where
         I: IntoInitPin<T, M, Error = E>,
@@ -280,14 +286,17 @@ pub mod construct;
 unsafe impl<T> Place<T> for MaybeUninit<T> {
     type Init = T;
 
+    #[inline]
     fn as_mut_ptr(&mut self) -> *mut T {
         self.as_mut_ptr()
     }
 
+    #[inline]
     unsafe fn assume_init(self) -> Self::Init {
         unsafe { self.assume_init() }
     }
 
+    #[inline]
     fn from_init(init: Self::Init) -> Self {
         Self::new(init)
     }
@@ -296,15 +305,18 @@ unsafe impl<T> Place<T> for MaybeUninit<T> {
 unsafe impl<const N: usize> Place<str> for MaybeUninit<[u8; N]> {
     type Init = [u8; N];
 
+    #[inline]
     fn as_mut_ptr(&mut self) -> *mut str {
         let ptr = self.as_mut_ptr().cast::<u8>();
         ptr::from_raw_parts_mut(ptr, N)
     }
 
+    #[inline]
     unsafe fn assume_init(self) -> Self::Init {
         unsafe { self.assume_init() }
     }
 
+    #[inline]
     fn from_init(init: Self::Init) -> Self {
         MaybeUninit::new(init)
     }
@@ -316,6 +328,7 @@ where
 {
     type Init = [T; N];
 
+    #[inline]
     fn as_mut_ptr(&mut self) -> *mut U {
         // SAFETY: [MaybeUninit<T>; N] and MaybeUninit<[T; N]> have the same memory
         // layout and validity value ranges.
@@ -324,10 +337,12 @@ where
         Place::as_mut_ptr(r)
     }
 
+    #[inline]
     unsafe fn assume_init(self) -> Self::Init {
         unsafe { self.map(|p| MaybeUninit::assume_init(p)) }
     }
 
+    #[inline]
     fn from_init(init: Self::Init) -> Self {
         init.map(MaybeUninit::new)
     }
@@ -342,14 +357,17 @@ macro_rules! std_alloc_places {
         unsafe impl<T, A: Allocator> Place<T> for $ty<MaybeUninit<T>, A> {
             type Init = $ty<T, A>;
 
+            #[inline]
             fn as_mut_ptr(&mut self) -> *mut T {
                 std_alloc_places!(@get_mut self, $($mut)? $ty).as_mut_ptr()
             }
 
+            #[inline]
             unsafe fn assume_init(self) -> Self::Init {
                 unsafe { self.assume_init() }
             }
 
+            #[inline]
             fn from_init(init: Self::Init) -> Self {
                 let (raw, alloc) = $ty::into_raw_with_allocator(init);
                 unsafe { $ty::from_raw_in(raw.cast::<MaybeUninit<T>>(), alloc) }
@@ -360,6 +378,7 @@ macro_rules! std_alloc_places {
             type Uninit = $ty<MaybeUninit<T>>;
             type Error = alloc::alloc::AllocError;
 
+            #[inline]
             fn try_new_uninit_in(_: ()) -> Result<Self::Uninit, Self::Error> {
                 $ty::try_new_uninit()
             }
@@ -369,6 +388,7 @@ macro_rules! std_alloc_places {
             type Uninit = $ty<MaybeUninit<T>, A>;
             type Error = alloc::alloc::AllocError;
 
+            #[inline]
             fn try_new_uninit_in(alloc: A) -> Result<Self::Uninit, Self::Error> {
                 $ty::try_new_uninit_in(alloc)
             }
@@ -377,16 +397,19 @@ macro_rules! std_alloc_places {
         unsafe impl<T, A: Allocator> Place<[T]> for $ty<[MaybeUninit<T>], A> {
             type Init = $ty<[T], A>;
 
+            #[inline]
             fn as_mut_ptr(&mut self) -> *mut [T] {
                 let len = self.len();
                 let ptr = std_alloc_places!(@get_mut self, $($mut)? $ty).as_mut_ptr();
                 ptr::from_raw_parts_mut(ptr.cast::<T>(), len)
             }
 
+            #[inline]
             unsafe fn assume_init(self) -> Self::Init {
                 unsafe { self.assume_init() }
             }
 
+            #[inline]
             fn from_init(init: Self::Init) -> Self {
                 let len = init.len();
                 let (raw, alloc) = $ty::into_raw_with_allocator(init);
@@ -401,12 +424,14 @@ macro_rules! std_alloc_places {
         unsafe impl<A: Allocator> Place<str> for $ty<[MaybeUninit<u8>], A> {
             type Init = $ty<str, A>;
 
+            #[inline]
             fn as_mut_ptr(&mut self) -> *mut str {
                 let len = self.len();
                 let ptr = std_alloc_places!(@get_mut self, $($mut)? $ty).as_mut_ptr();
                 ptr::from_raw_parts_mut(ptr.cast::<u8>(), len)
             }
 
+            #[inline]
             unsafe fn assume_init(self) -> Self::Init {
                 unsafe {
                     let (raw, alloc) = $ty::into_raw_with_allocator(self.assume_init());
@@ -418,6 +443,7 @@ macro_rules! std_alloc_places {
                 }
             }
 
+            #[inline]
             fn from_init(init: Self::Init) -> Self {
                 let len = init.len();
                 let (raw, alloc) = $ty::into_raw_with_allocator(init);
@@ -448,6 +474,7 @@ macro_rules! std_alloc_places {
             type Uninit = $ty<[MaybeUninit<T>]>;
             type Error = alloc::alloc::AllocError;
 
+            #[inline]
             fn try_new_uninit_in(len: usize) -> Result<Self::Uninit, Self::Error> {
                 $ty::try_new_uninit_slice(len)
             }
@@ -457,6 +484,7 @@ macro_rules! std_alloc_places {
             type Uninit = $ty<[MaybeUninit<T>], A>;
             type Error = alloc::alloc::AllocError;
 
+            #[inline]
             fn try_new_uninit_in((len, alloc): (usize, A)) -> Result<Self::Uninit, Self::Error> {
                 $ty::try_new_uninit_slice_in(len, alloc)
             }
@@ -466,6 +494,7 @@ macro_rules! std_alloc_places {
             type Uninit = $ty<[MaybeUninit<u8>]>;
             type Error = alloc::alloc::AllocError;
 
+            #[inline]
             fn try_new_uninit_in(len: usize) -> Result<Self::Uninit, Self::Error> {
                 $ty::try_new_uninit_slice(len)
             }
@@ -475,6 +504,7 @@ macro_rules! std_alloc_places {
             type Uninit = $ty<[MaybeUninit<u8>], A>;
             type Error = alloc::alloc::AllocError;
 
+            #[inline]
             fn try_new_uninit_in((len, alloc): (usize, A)) -> Result<Self::Uninit, Self::Error> {
                 $ty::try_new_uninit_slice_in(len, alloc)
             }
@@ -485,6 +515,7 @@ macro_rules! std_alloc_places {
             type Uninit = $ty<[MaybeUninit<T>]>;
             type Error = alloc::alloc::AllocError;
 
+            #[inline]
             fn try_new_uninit_in(len: usize) -> Result<Self::Uninit, Self::Error> {
                 Ok($ty::new_uninit_slice(len))
             }
@@ -494,6 +525,7 @@ macro_rules! std_alloc_places {
             type Uninit = $ty<[MaybeUninit<T>], A>;
             type Error = alloc::alloc::AllocError;
 
+            #[inline]
             fn try_new_uninit_in((len, alloc): (usize, A)) -> Result<Self::Uninit, Self::Error> {
                 Ok($ty::new_uninit_slice_in(len, alloc))
             }
@@ -503,6 +535,7 @@ macro_rules! std_alloc_places {
             type Uninit = $ty<[MaybeUninit<u8>]>;
             type Error = alloc::alloc::AllocError;
 
+            #[inline]
             fn try_new_uninit_in(len: usize) -> Result<Self::Uninit, Self::Error> {
                 Ok($ty::new_uninit_slice(len))
             }
@@ -512,6 +545,7 @@ macro_rules! std_alloc_places {
             type Uninit = $ty<[MaybeUninit<u8>], A>;
             type Error = alloc::alloc::AllocError;
 
+            #[inline]
             fn try_new_uninit_in((len, alloc): (usize, A)) -> Result<Self::Uninit, Self::Error> {
                 Ok($ty::new_uninit_slice_in(len, alloc))
             }
@@ -541,6 +575,7 @@ pub trait PlaceState: sealed::Sealed {
 impl sealed::Sealed for Owned {}
 impl PlaceState for Owned {
     #[allow(private_interfaces)]
+    #[inline]
     unsafe fn drop<T: ?Sized>(inner: *mut T) {
         // SAFETY: The value is owned, so it is initialized.
         unsafe { inner.drop_in_place() };
@@ -550,6 +585,7 @@ impl PlaceState for Owned {
 impl sealed::Sealed for Uninitialized {}
 impl PlaceState for Uninitialized {
     #[allow(private_interfaces)]
+    #[inline]
     unsafe fn drop<T: ?Sized>(_inner: *mut T) {
         // No-op, as the value is uninitialized.
     }
@@ -584,6 +620,7 @@ unsafe impl<'a, T: ?Sized + Sync, S: PlaceState> Sync for PlaceRef<'a, T, S> {}
 impl<'a, T: ?Sized, S: PlaceState> Unpin for PlaceRef<'a, T, S> {}
 
 impl<'a, T: ?Sized, S: PlaceState> PlaceRef<'a, T, S> {
+    #[inline]
     pub(crate) const unsafe fn from_inner(inner: NonNull<T>) -> Self {
         PlaceRef {
             inner,
@@ -596,6 +633,7 @@ impl<'a, T: ?Sized, S: PlaceState> PlaceRef<'a, T, S> {
 // SAFETY: We have `owns_value: PhantomData<T>`, which tells the dropck that we
 // own a value of type T.
 unsafe impl<'a, #[may_dangle] T: ?Sized, S: PlaceState> Drop for PlaceRef<'a, T, S> {
+    #[inline]
     fn drop(&mut self) {
         // SAFETY: We are dropping the place, so we need to drop the value if it is
         // initialized.

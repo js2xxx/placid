@@ -75,6 +75,7 @@ macro_rules! own {
 impl<'a, T: ?Sized> Deref for Own<'a, T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         // SAFETY: PlaceRef is owned, so the value is initialized.
         unsafe { self.inner.as_ref() }
@@ -82,6 +83,7 @@ impl<'a, T: ?Sized> Deref for Own<'a, T> {
 }
 
 impl<'a, T: ?Sized> DerefMut for Own<'a, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: PlaceRef is owned, so the value is initialized.
         unsafe { self.inner.as_mut() }
@@ -89,24 +91,28 @@ impl<'a, T: ?Sized> DerefMut for Own<'a, T> {
 }
 
 impl<'a, T: ?Sized> AsRef<T> for Own<'a, T> {
+    #[inline]
     fn as_ref(&self) -> &T {
         self
     }
 }
 
 impl<'a, T: ?Sized> AsMut<T> for Own<'a, T> {
+    #[inline]
     fn as_mut(&mut self) -> &mut T {
         self
     }
 }
 
 impl<'a, T: ?Sized> Borrow<T> for Own<'a, T> {
+    #[inline]
     fn borrow(&self) -> &T {
         self
     }
 }
 
 impl<'a, T: ?Sized> BorrowMut<T> for Own<'a, T> {
+    #[inline]
     fn borrow_mut(&mut self) -> &mut T {
         self
     }
@@ -127,6 +133,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// let pinned = Own::into_pin(owned, drop_slot);
     /// // The value is now pinned and cannot be moved
     /// ```
+    #[inline]
     pub fn into_pin<'b>(this: Self, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T> {
         POwn::new(this, slot)
     }
@@ -144,6 +151,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// let ptr = Own::as_ptr(&my_place);
     /// assert_eq!(unsafe { *ptr }, 42);
     /// ```
+    #[inline]
     pub const fn as_ptr(this: &Self) -> *const T {
         this.inner.as_ptr()
     }
@@ -162,6 +170,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// unsafe { *ptr = 100; }
     /// assert_eq!(*my_place, 100);
     /// ```
+    #[inline]
     pub const fn as_mut_ptr(this: &mut Self) -> *mut T {
         this.inner.as_ptr()
     }
@@ -182,6 +191,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # // Clean up to avoid leak in test
     /// # unsafe { core::ptr::from_mut(leaked_str).drop_in_place() };
     /// ```
+    #[inline]
     pub const fn leak(this: Self) -> &'a mut T {
         let mut inner = this.inner;
         mem::forget(this);
@@ -209,6 +219,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     ///     assert_eq!(&*recovered, "Hello");
     /// }
     /// ```
+    #[inline]
     pub const fn into_raw(this: Self) -> *mut T {
         let inner = this.inner;
         mem::forget(this);
@@ -232,6 +243,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// let recovered: Own<Vec<i32>> = unsafe { Own::from_raw(ptr) };
     /// assert_eq!(&*recovered, &[1, 2, 3]);
     /// ```
+    #[inline]
     pub const unsafe fn from_raw(ptr: *mut T) -> Self {
         // SAFETY: The caller must ensure that the pointer is valid and points to
         // an initialized value.
@@ -258,6 +270,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// let owned_place: Own<i32> = unsafe { Own::from_mut(&mut uninit_place) };
     /// assert_eq!(*owned_place, 10);
     /// ```
+    #[inline]
     pub unsafe fn from_mut(place: &'a mut impl Place<T>) -> Self {
         unsafe { Own::from_raw(place.as_mut_ptr()) }
     }
@@ -277,6 +290,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// let my_place_again = uninit_place.write(String::from("World"));
     /// assert_eq!(&*my_place_again, "World");
     /// ```
+    #[inline]
     pub fn drop(this: Self) -> Uninit<'a, T> {
         let inner = this.inner;
         mem::forget(this);
@@ -302,6 +316,7 @@ impl<'a, T> Own<'a, T> {
     /// let my_place_again: Own<i32> = uninit_place.write(200);
     /// assert_eq!(*my_place_again, 200);
     /// ```
+    #[inline]
     pub const fn take(this: Self) -> (T, Uninit<'a, T>) {
         let inner = this.inner;
         mem::forget(this);
@@ -333,6 +348,7 @@ macro_rules! impl_downcast {
             ///     Err(_) => panic!("Downcast failed"),
             /// }
             /// ```
+            #[inline]
             pub fn downcast<U: $($t)*>(self) -> Result<Own<'a, U>, Self> {
                 if (*self).is::<U>() {
                     // SAFETY: We have checked that the type is correct.
@@ -358,6 +374,7 @@ macro_rules! impl_downcast {
             #[doc = concat!("let value: Own<dyn ", stringify!($($t)*), "> = own!(\"hello\");")]
             /// let downcast: Own<&str> = unsafe { value.downcast_unchecked() };
             /// ```
+            #[inline]
             pub unsafe fn downcast_unchecked<U: $($t)*>(self) -> Own<'a, U> {
                 let raw = Own::into_raw(self).cast::<U>();
                 // SAFETY: The caller must ensure that the type is correct.
@@ -370,18 +387,21 @@ macro_rules! impl_downcast {
 impl_downcast!([Any][Any + Send][Any + Send + Sync]);
 
 impl<'a, T: ?Sized + fmt::Debug> fmt::Debug for Own<'a, T> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
 impl<'a, T: ?Sized + fmt::Display> fmt::Display for Own<'a, T> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&**self, f)
     }
 }
 
 impl<'a, T: ?Sized> fmt::Pointer for Own<'a, T> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Pointer::fmt(&self.inner, f)
     }
@@ -398,6 +418,7 @@ impl<'a, T: Clone> Own<'a, T> {
     /// let cloned = owned.clone(&mut another_place);
     /// assert_eq!(&*cloned, "Hello");
     /// ```
+    #[inline]
     pub fn clone<'b>(&self, to: &'b mut impl Place<T>) -> Own<'b, T> {
         to.write(|| (**self).clone())
     }
@@ -414,30 +435,35 @@ impl<'a, T: Default> Own<'a, T> {
     /// let mut place = core::mem::MaybeUninit::uninit();
     /// let owned: Own<Vec<i32>> = Own::default(&mut place);
     /// assert_eq!(&*owned, &[]);
+    #[inline]
     pub fn default(place: &'a mut impl Place<T>) -> Self {
         place.write(T::default)
     }
 }
 
 impl<'a, T> Default for Own<'a, [T]> {
+    #[inline]
     fn default() -> Self {
         unsafe { Own::from_inner(NonNull::from_mut(&mut [])) }
     }
 }
 
 impl<'a> Default for Own<'a, str> {
+    #[inline]
     fn default() -> Self {
         unsafe { Own::from_inner(NonNull::from_ref("")) }
     }
 }
 
 impl<'a> Default for Own<'a, core::ffi::CStr> {
+    #[inline]
     fn default() -> Self {
         unsafe { Own::from_inner(NonNull::from_ref(c"")) }
     }
 }
 
 impl<'a, 'b, T: ?Sized + PartialEq<U>, U: ?Sized> PartialEq<Own<'b, U>> for Own<'a, T> {
+    #[inline]
     fn eq(&self, other: &Own<'b, U>) -> bool {
         **self == **other
     }
@@ -446,34 +472,40 @@ impl<'a, 'b, T: ?Sized + PartialEq<U>, U: ?Sized> PartialEq<Own<'b, U>> for Own<
 impl<'a, T: ?Sized + Eq> Eq for Own<'a, T> {}
 
 impl<'a, 'b, T: ?Sized + PartialOrd<U>, U: ?Sized> PartialOrd<Own<'b, U>> for Own<'a, T> {
+    #[inline]
     fn partial_cmp(&self, other: &Own<'b, U>) -> Option<core::cmp::Ordering> {
         (**self).partial_cmp(&**other)
     }
 }
 
 impl<'a, T: ?Sized + Ord> Ord for Own<'a, T> {
+    #[inline]
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (**self).cmp(&**other)
     }
 }
 
 impl<'a, T: ?Sized + Hash> Hash for Own<'a, T> {
+    #[inline]
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         (**self).hash(state)
     }
 }
 
 impl<'a, T: ?Sized + Hasher> Hasher for Own<'a, T> {
+    #[inline]
     fn finish(&self) -> u64 {
         (**self).finish()
     }
 
+    #[inline]
     fn write(&mut self, bytes: &[u8]) {
         (**self).write(bytes);
     }
 }
 
 impl<'a, T: ?Sized + Error> Error for Own<'a, T> {
+    #[inline]
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         (**self).source()
     }
@@ -482,6 +514,7 @@ impl<'a, T: ?Sized + Error> Error for Own<'a, T> {
 impl<'a, F: ?Sized + Future + Unpin> Future for Own<'a, F> {
     type Output = F::Output;
 
+    #[inline]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         Pin::new(&mut **self).poll(cx)
     }
@@ -489,6 +522,7 @@ impl<'a, F: ?Sized + Future + Unpin> Future for Own<'a, F> {
 
 #[cfg(feature = "alloc")]
 #[allow(dead_code)]
+#[inline]
 fn into_undrop_box<T: ?Sized>(own: Own<'_, T>) -> Box<T, impl Allocator> {
     use core::alloc::{AllocError, Allocator, Layout};
 
@@ -516,14 +550,17 @@ fn into_undrop_box<T: ?Sized>(own: Own<'_, T>) -> Box<T, impl Allocator> {
 impl<'a, I: ?Sized + Iterator> Iterator for Own<'a, I> {
     type Item = I::Item;
 
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         (**self).next()
     }
 
+    #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         (**self).size_hint()
     }
 
+    #[inline]
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         (**self).nth(n)
     }
@@ -583,6 +620,7 @@ pub unsafe trait IntoOwn: Deref + Sized {
     /// macro.
     ///
     /// [`into_own!`]: crate::into_own!
+    #[inline]
     fn into_own_place(self) -> Self::Place {
         Place::from_init(self)
     }

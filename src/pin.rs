@@ -61,6 +61,7 @@ impl<'a, T: ?Sized> DroppingSlot<'a, T> {
     /// let slot: DroppingSlot<String> = DroppingSlot::new();
     /// // Slot is now ready to be used with DropSlot::new_unchecked
     /// ```
+    #[inline]
     pub const fn new() -> Self {
         DroppingSlot {
             drop_flag: Cell::new(true),
@@ -79,6 +80,7 @@ impl<'a, T: ?Sized> DroppingSlot<'a, T> {
 }
 
 impl<'a, T: ?Sized> Default for DroppingSlot<'a, T> {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }
@@ -133,6 +135,7 @@ impl<'a, 'b, T: ?Sized> DropSlot<'a, 'b, T> {
     /// };
     /// // Now drop_slot can be used to initialize pinned values
     /// ```
+    #[inline]
     pub unsafe fn new_unchecked(slot: &'b mut DroppingSlot<'a, T>) -> Self {
         DropSlot(slot)
     }
@@ -266,6 +269,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// let pinned_ref = pinned.as_ref();
     /// assert_eq!(&*pinned_ref, "pinned");
     /// ```
+    #[inline]
     pub const fn as_ref(&self) -> Pin<&T> {
         // SAFETY: `inner` is properly pinned.
         unsafe { Pin::new_unchecked(self.inner.as_ref()) }
@@ -284,6 +288,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// let mut pinned_mut = pinned.as_mut();
     /// pinned_mut.push(3);
     /// ```
+    #[inline]
     pub const fn as_mut(&mut self) -> Pin<&mut T> {
         // SAFETY: `inner` is properly pinned.
         unsafe { Pin::new_unchecked(self.inner.as_mut()) }
@@ -305,6 +310,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// let pinned_mut: Pin<&mut String> = Pin::new(&mut pinned).as_deref_mut();
     /// // Now you can modify the string through the pinned reference
     /// ```
+    #[inline]
     pub const fn as_deref_mut(self: Pin<&mut Self>) -> Pin<&mut T> {
         // SAFETY: `inner` is properly pinned.
         unsafe { Pin::new_unchecked(Pin::into_inner_unchecked(self).inner.as_mut()) }
@@ -323,6 +329,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// pinned.set(100);
     /// assert_eq!(*pinned, 100);
     /// ```
+    #[inline]
     pub fn set(&mut self, value: T)
     where
         T: Sized,
@@ -347,6 +354,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// let uninit = POwn::drop(pinned);
     /// // The String has been dropped, and we can re-initialize the place
     /// ```
+    #[inline]
     pub fn drop(this: Self) -> Uninit<'b, T> {
         let inner = this.inner;
         drop(this);
@@ -368,6 +376,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// let unpinned = POwn::into_inner(pinned);
     /// assert_eq!(*unpinned, 42);
     /// ```
+    #[inline]
     pub fn into_inner(this: Self) -> Own<'b, T>
     where
         T: Unpin,
@@ -382,30 +391,35 @@ impl<'b, T: ?Sized> POwn<'b, T> {
 impl<'b, T: ?Sized> Deref for POwn<'b, T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         unsafe { self.inner.as_ref() }
     }
 }
 
 impl<'b, T: ?Sized + Unpin> DerefMut for POwn<'b, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { self.inner.as_mut() }
     }
 }
 
 impl<'b, T: ?Sized + fmt::Debug> fmt::Debug for POwn<'b, T> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
 impl<'b, T: ?Sized + fmt::Display> fmt::Display for POwn<'b, T> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&**self, f)
     }
 }
 
 impl<'a, T: ?Sized> fmt::Pointer for POwn<'a, T> {
+    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Pointer::fmt(&self.inner, f)
     }
@@ -429,6 +443,7 @@ impl<'a, T: Clone> POwn<'a, T> {
     /// let cloned: POwn<String> = pinned.clone(&mut place, drop_slot);
     /// assert_eq!(&*cloned, "hello");
     /// ```
+    #[inline]
     pub fn clone<'p, 'b>(
         &self,
         to: &'p mut impl Place<T>,
@@ -451,12 +466,14 @@ impl<'b, T: Default> POwn<'b, T> {
     /// let owned: POwn<Vec<i32>> = POwn::default(&mut place, drop_slot);
     /// assert_eq!(&*owned, &[]);
     /// ```
+    #[inline]
     pub fn default<'a>(place: &'a mut impl Place<T>, slot: DropSlot<'a, 'b, T>) -> Self {
         place.write_pin(T::default, slot)
     }
 }
 
 impl<'a, 'b, T: ?Sized + PartialEq<U>, U: ?Sized> PartialEq<POwn<'b, U>> for POwn<'a, T> {
+    #[inline]
     fn eq(&self, other: &POwn<'b, U>) -> bool {
         **self == **other
     }
@@ -465,34 +482,40 @@ impl<'a, 'b, T: ?Sized + PartialEq<U>, U: ?Sized> PartialEq<POwn<'b, U>> for POw
 impl<'a, T: ?Sized + Eq> Eq for POwn<'a, T> {}
 
 impl<'a, 'b, T: ?Sized + PartialOrd<U>, U: ?Sized> PartialOrd<POwn<'b, U>> for POwn<'a, T> {
+    #[inline]
     fn partial_cmp(&self, other: &POwn<'b, U>) -> Option<core::cmp::Ordering> {
         (**self).partial_cmp(&**other)
     }
 }
 
 impl<'a, T: ?Sized + Ord> Ord for POwn<'a, T> {
+    #[inline]
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (**self).cmp(&**other)
     }
 }
 
 impl<'a, T: ?Sized + Hash> Hash for POwn<'a, T> {
+    #[inline]
     fn hash<H: Hasher>(&self, state: &mut H) {
         (**self).hash(state)
     }
 }
 
 impl<'a, T: ?Sized + Hasher + Unpin> Hasher for POwn<'a, T> {
+    #[inline]
     fn finish(&self) -> u64 {
         (**self).finish()
     }
 
+    #[inline]
     fn write(&mut self, bytes: &[u8]) {
         (**self).write(bytes);
     }
 }
 
 impl<'a, T: ?Sized + Error> Error for POwn<'a, T> {
+    #[inline]
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         (**self).source()
     }
@@ -501,6 +524,7 @@ impl<'a, T: ?Sized + Error> Error for POwn<'a, T> {
 impl<'a, F: ?Sized + Future> Future for POwn<'a, F> {
     type Output = F::Output;
 
+    #[inline]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.as_deref_mut().poll(cx)
     }

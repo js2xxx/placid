@@ -5,18 +5,21 @@ use super::*;
 impl<'a, Args: Tuple, F: FnOnce<Args> + ?Sized> FnOnce<Args> for Own<'a, F> {
     type Output = F::Output;
 
+    #[inline]
     extern "rust-call" fn call_once(self, args: Args) -> Self::Output {
         (*into_undrop_box(self)).call_once(args)
     }
 }
 
 impl<'a, Args: Tuple, F: FnMut<Args> + ?Sized> FnMut<Args> for Own<'a, F> {
+    #[inline]
     extern "rust-call" fn call_mut(&mut self, args: Args) -> Self::Output {
         (**self).call_mut(args)
     }
 }
 
 impl<'a, Args: Tuple, F: Fn<Args> + ?Sized> Fn<Args> for Own<'a, F> {
+    #[inline]
     extern "rust-call" fn call(&self, args: Args) -> Self::Output {
         (**self).call(args)
     }

@@ -56,6 +56,7 @@ macro_rules! uninit {
 impl<'a, T> Deref for Uninit<'a, T> {
     type Target = MaybeUninit<T>;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         // SAFETY: We are treating the place as uninitialized.
         unsafe { self.inner.cast().as_ref() }
@@ -63,6 +64,7 @@ impl<'a, T> Deref for Uninit<'a, T> {
 }
 
 impl<'a, T> DerefMut for Uninit<'a, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: We are treating the place as uninitialized.
         unsafe { self.inner.cast().as_mut() }
@@ -72,6 +74,7 @@ impl<'a, T> DerefMut for Uninit<'a, T> {
 impl<'a, T> Deref for Uninit<'a, [T]> {
     type Target = [MaybeUninit<T>];
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         // SAFETY: We are treating the place as uninitialized.
         unsafe {
@@ -82,6 +85,7 @@ impl<'a, T> Deref for Uninit<'a, [T]> {
 }
 
 impl<'a, T> DerefMut for Uninit<'a, [T]> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: We are treating the place as uninitialized.
         unsafe {
@@ -94,6 +98,7 @@ impl<'a, T> DerefMut for Uninit<'a, [T]> {
 impl<'a> Deref for Uninit<'a, str> {
     type Target = [MaybeUninit<u8>];
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
         // SAFETY: We are treating the place as uninitialized.
         unsafe {
@@ -104,6 +109,7 @@ impl<'a> Deref for Uninit<'a, str> {
 }
 
 impl<'a> DerefMut for Uninit<'a, str> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         // SAFETY: We are treating the place as uninitialized.
         unsafe {
@@ -134,6 +140,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     ///     assert_eq!(&*owned, "Hello");
     /// }
     /// ```
+    #[inline]
     pub const fn into_raw(self) -> *mut T {
         let inner = self.inner;
         mem::forget(self);
@@ -161,6 +168,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     ///     assert_eq!(*owned, 42);
     /// }
     /// ```
+    #[inline]
     pub const unsafe fn from_raw(ptr: *mut T) -> Self {
         let inner = unsafe { NonNull::new_unchecked(ptr) };
         unsafe { Uninit::from_inner(inner) }
@@ -184,6 +192,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     ///     assert_eq!(*owned, 42);
     /// }
     /// ```
+    #[inline]
     pub fn from_mut(place: &'a mut impl Place<T>) -> Self {
         // SAFETY: We have a mutable reference to a place, so the memory is
         // valid for T.
@@ -206,6 +215,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     ///     assert_eq!(*uninit.assume_init(), 42);
     /// }
     /// ```
+    #[inline]
     pub const fn as_mut_ptr(&mut self) -> *mut T {
         self.inner.as_ptr()
     }
@@ -232,6 +242,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     ///     assert_eq!(*uninit.assume_init(), 42);
     /// }
     /// ```
+    #[inline]
     pub const unsafe fn assume_init(self) -> Own<'a, T> {
         let inner = self.inner;
         mem::forget(self);
@@ -268,6 +279,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     ///     assert_eq!(&*pinned, "Pinned value");
     /// }
     /// ```
+    #[inline]
     pub unsafe fn assume_init_pin<'b>(self, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T> {
         let inner = self.inner;
         mem::forget(self);
@@ -288,6 +300,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// let owned = uninit.write(String::from("Initialized!"));
     /// assert_eq!(&*owned, "Initialized!");
     /// ```
+    #[inline]
     pub fn write<I, M>(self, init: I) -> Own<'a, T>
     where
         I: IntoInit<T, M, Error: fmt::Debug>,
@@ -309,6 +322,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// let result = uninit.try_write(42);
     /// assert!(result.is_ok());
     /// ```
+    #[inline]
     pub fn try_write<I, M>(self, init: I) -> InitResult<'a, T, I::Error>
     where
         I: IntoInit<T, M>,
@@ -332,6 +346,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// // The value is now pinned and initialized
     /// assert_eq!(&*pinned, "Pinned value");
     /// ```
+    #[inline]
     pub fn write_pin<'b, I, M>(self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
         I: IntoInitPin<T, M, Error: fmt::Debug>,
@@ -354,6 +369,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// let result = uninit.try_write_pin(vec![1, 2, 3], drop_slot);
     /// assert!(result.is_ok());
     /// ```
+    #[inline]
     pub fn try_write_pin<'b, I, M>(
         self,
         init: I,

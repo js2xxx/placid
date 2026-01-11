@@ -315,6 +315,7 @@ pub mod prelude {
 }
 
 #[doc(hidden)]
+#[inline]
 pub const fn __opaque_init<T: ?Sized, E, I>(init: I) -> impl crate::init::Init<T, Error = E>
 where
     I: crate::init::Init<T, Error = E>,
@@ -323,6 +324,7 @@ where
 }
 
 #[doc(hidden)]
+#[inline]
 pub const fn __opaque_init_pin<T: ?Sized, E, I>(init: I) -> impl crate::init::InitPin<T, Error = E>
 where
     I: crate::init::InitPin<T, Error = E>,
