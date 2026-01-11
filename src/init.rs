@@ -202,12 +202,12 @@ pub trait InitPin<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{own, Own, init::*};
+    /// use placid::{own, init::*};
     ///
-    /// let owned: Own<u32> = own!(value(10u32).unwrap_or(20u32));
+    /// let owned = own!(value(10u32).unwrap_or(20u32));
     /// assert_eq!(*owned, 10);
     ///
-    /// let failed: Own<u32> = own!(
+    /// let failed = own!(
     ///     try_with(|| u32::try_from(-1i32)).unwrap_or(30u32)
     /// );
     /// assert_eq!(*failed, 30);
@@ -225,11 +225,11 @@ pub trait InitPin<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{own, Own, init::*};
+    /// use placid::{own, init::*};
     ///
-    /// let owned: Own<u32> = own!(
-    ///     try_with(|| u32::try_from(-1i32)).
-    ///         unwrap_or_else(|err| {
+    /// let owned = own!(
+    ///     try_with(|| u32::try_from(-1i32))
+    ///         .unwrap_or_else(|err| {
     ///             println!("Initialization failed with error: {}", err);
     ///             value(42u32)
     ///         })

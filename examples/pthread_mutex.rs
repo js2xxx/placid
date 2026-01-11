@@ -8,7 +8,7 @@ use std::{
 };
 
 use placid::{
-    InitPin, POwn, Placed, Uninit,
+    InitPin, Place, Uninit,
     init::{InitPinError, IntoInit, try_raw_pin},
     init_pin, pown,
 };
@@ -150,7 +150,7 @@ struct TwoMutexes {
 
 fn main() {
     {
-        let m = Mutex::init_pin(Box::new_uninit(), Mutex::new(123));
+        let m = Box::new_uninit().init_pin(Mutex::new(123));
         println!("{}", *m.lock().unwrap());
         *m.lock().unwrap() = 2;
         println!("{}", *m.lock().unwrap());
@@ -159,7 +159,7 @@ fn main() {
     }
 
     {
-        let mut m: POwn<TwoMutexes> = pown!(init_pin!(TwoMutexes {
+        let mut m = pown!(init_pin!(TwoMutexes {
             a: Mutex::new(0),
             b: Mutex::new(init_pin!(TestPinned(1, PhantomPinned))),
         }));

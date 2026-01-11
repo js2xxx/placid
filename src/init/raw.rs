@@ -2,7 +2,7 @@ use core::{convert::Infallible, marker::PhantomData};
 
 use crate::{
     Own, Uninit,
-    init::{Init, InitPin, InitPinResult, InitResult, IntoInit},
+    init::{Init, InitPin, InitPinResult, InitResult},
     pin::{DropSlot, POwn},
 };
 
@@ -12,7 +12,7 @@ type PhantomResult<T, E> = PhantomData<(fn() -> T, fn() -> E)>;
 /// place.
 ///
 /// This initializer is created from [`try_raw_pin()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct TryRawPin<F, T: ?Sized, E>(F, PhantomResult<T, E>);
 
 impl<T: ?Sized, F, E> InitPin<T> for TryRawPin<F, T, E>
@@ -46,22 +46,10 @@ where
     TryRawPin(f, PhantomData)
 }
 
-impl<T: ?Sized, F, E> IntoInit<T, TryRawPin<F, T, E>> for F
-where
-    F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> InitPinResult<'a, 'b, T, E>,
-{
-    type Init = TryRawPin<F, T, E>;
-    type Error = E;
-
-    fn into_init(self) -> Self::Init {
-        TryRawPin(self, PhantomData)
-    }
-}
-
 /// Initializes a place with a closure that has full control.
 ///
 /// This initializer is created from [`try_raw()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct TryRaw<F, T: ?Sized, E>(F, PhantomResult<T, E>);
 
 impl<T: ?Sized, F, E> InitPin<T> for TryRaw<F, T, E>
@@ -107,23 +95,11 @@ where
     TryRaw(f, PhantomData)
 }
 
-impl<T: ?Sized, F, E> IntoInit<T, TryRaw<F, T, E>> for F
-where
-    F: FnOnce(Uninit<'_, T>) -> InitResult<'_, T, E>,
-{
-    type Init = TryRaw<F, T, E>;
-    type Error = E;
-
-    fn into_init(self) -> Self::Init {
-        TryRaw(self, PhantomData)
-    }
-}
-
 /// Initializes a place with a closure that has full control over pinned
 /// initialization.
 ///
 /// This initializer is created from [`raw_pin()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct RawPin<F, T: ?Sized>(F, PhantomData<fn() -> T>);
 
 impl<T: ?Sized, F> InitPin<T> for RawPin<F, T>
@@ -156,22 +132,10 @@ where
     RawPin(f, PhantomData)
 }
 
-impl<T: ?Sized, F> IntoInit<T, RawPin<F, T>> for F
-where
-    F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
-{
-    type Init = RawPin<F, T>;
-    type Error = Infallible;
-
-    fn into_init(self) -> Self::Init {
-        RawPin(self, PhantomData)
-    }
-}
-
 /// Initializes a place with a closure that has full control and cannot fail.
 ///
 /// This initializer is created from [`raw()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Raw<F, T: ?Sized>(F, PhantomData<fn() -> T>);
 
 impl<T: ?Sized, F> InitPin<T> for Raw<F, T>
@@ -210,16 +174,4 @@ where
     F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
 {
     Raw(f, PhantomData)
-}
-
-impl<T: ?Sized, F> IntoInit<T, Raw<F, T>> for F
-where
-    F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
-{
-    type Init = Raw<F, T>;
-    type Error = Infallible;
-
-    fn into_init(self) -> Self::Init {
-        Raw(self, PhantomData)
-    }
 }

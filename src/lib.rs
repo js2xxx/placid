@@ -172,7 +172,7 @@
 //! declarative and ergonomic construction of complex types in-place.
 //!
 //! ```rust
-//! use placid::{Uninit, uninit, init_pin, init, InitPin, Placed, POwn};
+//! use placid::{Uninit, uninit, init_pin, init, InitPin, Place, POwn};
 //! use std::{marker::PhantomPinned, pin::Pin, convert::Infallible};
 //!
 //! #[derive(InitPin)]
@@ -232,12 +232,12 @@
 //! let mut place = Box::<Nested>::new_uninit();
 //! let uninit = Uninit::from_mut(&mut place);
 //! let slot = placid::drop_slot!();
-//! let pinned: POwn<Nested> = uninit.write_pin(Nested::new("boxed"), slot);
+//! let pinned = uninit.write_pin(Nested::new("boxed"), slot);
 //! pinned.assert_values("boxed");
 //!
-//! // Convenience methods for placing initialization.
-//! let pinned: Pin<Box<Nested>> =
-//!     Nested::init_pin(Box::new_uninit(), Nested::new("boxed via method"));
+//! // Convenience methods for placing initialization
+//! // into containers.
+//! let pinned = Box::new_uninit().init_pin(Nested::new("boxed via method"));
 //! pinned.assert_values("boxed via method");
 //! ```
 //!
@@ -270,7 +270,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod place;
-pub use self::place::{Place, Placed};
+pub use self::place::Place;
 
 pub mod owned;
 pub mod pin;
@@ -305,7 +305,7 @@ mod sealed {
 /// A simple usage example (although not practical):
 ///
 /// ```rust
-/// use placid::{own, Own, init, Init};
+/// use placid::{own, init, Init};
 ///
 /// #[derive(Init)]
 /// struct Point {
@@ -313,7 +313,7 @@ mod sealed {
 ///     y: i32,
 /// }
 ///
-/// let owned: Own<Point> = own!(init!(Point { x: 10, y: 20 }));
+/// let owned = own!(init!(Point { x: 10, y: 20 }));
 /// assert_eq!(owned.x, 10);
 /// assert_eq!(owned.y, 20);
 /// ```
@@ -351,7 +351,7 @@ pub use placid_macro::Init;
 ///
 /// let owned: POwn<Pinned> = pown!(init_pin!(Pinned {
 ///     ptr: std::ptr::null(),
-///     marker: || PhantomPinned,
+///     marker: PhantomPinned,
 /// })
 /// .and_pin(|this| unsafe {
 ///     // SAFETY: We are initializing the self-referential pointer.
@@ -402,7 +402,7 @@ pub use placid_macro::InitPin;
 /// A simple usage example (although not practical):
 ///
 /// ```rust
-/// use placid::{own, Own, init, Init};
+/// use placid::{own, init, Init};
 ///
 /// #[derive(Init)]
 /// struct Point {
@@ -410,7 +410,7 @@ pub use placid_macro::InitPin;
 ///     y: i32,
 /// }
 ///
-/// let owned: Own<Point> = own!(init!(Point { x: 10, y: 20 }));
+/// let owned = own!(init!(Point { x: 10, y: 20 }));
 /// assert_eq!(owned.x, 10);
 /// assert_eq!(owned.y, 20);
 /// ```
@@ -467,7 +467,7 @@ pub use placid_macro::init;
 ///     y: i32,
 /// }
 ///
-/// let owned: POwn<Point> = pown!(init_pin!(Point { x: 10, y: 20 }));
+/// let owned = pown!(init_pin!(Point { x: 10, y: 20 }));
 /// assert_eq!(owned.x, 10);
 /// assert_eq!(owned.y, 20);
 /// ```

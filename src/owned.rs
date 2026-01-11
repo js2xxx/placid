@@ -167,7 +167,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     ///
     /// ```rust
     /// use placid::Own;
-    /// let my_place: Own<String> = placid::own!(String::from("Hello"));
+    /// let my_place = placid::own!(String::from("Hello"));
     /// let leaked_str: &mut String = Own::leak(my_place);
     /// leaked_str.push_str(", world!");
     /// assert_eq!(leaked_str, "Hello, world!");
@@ -261,11 +261,11 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// ```rust
     /// use placid::{Own, Uninit};
     ///
-    /// let my_place: Own<String> = placid::own!(String::from("Hello"));
-    /// let uninit_place: Uninit<String> = Own::drop(my_place);
+    /// let my_place = placid::own!(String::from("Hello"));
+    /// let uninit_place = Own::drop(my_place);
     /// // At this point, the String has been dropped.
     /// // We can now re-initialize the place.
-    /// let my_place_again: Own<String> = uninit_place.write(String::from("World"));
+    /// let my_place_again = uninit_place.write(String::from("World"));
     /// assert_eq!(&*my_place_again, "World");
     /// ```
     pub fn drop(this: Self) -> Uninit<'a, T> {
@@ -384,11 +384,9 @@ impl<'a, T: Clone> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{own, Own};
-    ///
-    /// let owned: Own<String> = own!(String::from("Hello"));
+    /// let owned = placid::own!(String::from("Hello"));
     /// let mut another_place = core::mem::MaybeUninit::uninit();
-    /// let cloned: Own<String> = owned.clone(&mut another_place);
+    /// let cloned = owned.clone(&mut another_place);
     /// assert_eq!(&*cloned, "Hello");
     /// ```
     pub fn clone<'b>(&self, to: &'b mut impl Place<T>) -> Own<'b, T> {
@@ -402,7 +400,7 @@ impl<'a, T: Default> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{own, Own};
+    /// use placid::Own;
     ///
     /// let mut place = core::mem::MaybeUninit::uninit();
     /// let owned: Own<Vec<i32>> = Own::default(&mut place);

@@ -85,7 +85,7 @@ impl<T: Copy> SpecInitSlice<T> for &[T] {
 ///
 /// This initializer is created by the [`slice()`] factory function or through
 /// the [`IntoInit`] trait for slice types.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Slice<'a, T>(&'a [T]);
 
 impl<T: Clone> InitPin<[T]> for Slice<'_, T> {
@@ -188,7 +188,7 @@ impl<'a, T: Clone, const N: usize> IntoInit<[T; N], Slice<'a, T>> for &'a [T] {
 /// Initializes a `str` slice by copying from a source string slice.
 ///
 /// This initializer is created by the [`str()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Str<'a>(&'a str);
 
 impl InitPin<str> for Str<'_> {
@@ -259,7 +259,7 @@ impl<'b> IntoInit<str, Str<'b>> for &'b str {
 /// Initializes all elements of a slice with a single repeated value.
 ///
 /// This initializer is created by the [`repeat()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Repeat<T>(T);
 
 impl<T: Clone> InitPin<[T]> for Repeat<T> {
@@ -329,7 +329,7 @@ pub const fn repeat<T: Clone>(value: T) -> Repeat<T> {
 /// Initializes a slice by calling a closure for each element.
 ///
 /// This initializer is created by the [`repeat_with()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct RepeatWith<F>(F);
 
 impl<T, F> InitPin<[T]> for RepeatWith<F>

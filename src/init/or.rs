@@ -10,7 +10,7 @@ use crate::{
 ///
 /// This initializer is created by calling the [`InitPin::or`] method or by
 /// using the [`or()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Or<I1, I2, M> {
     init1: I1,
     init2: I2,
@@ -82,7 +82,7 @@ where
 ///
 /// This initializer is created by calling the [`InitPin::or_else`] method or by
 /// using the [`or_else()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct OrElse<I, F> {
     init1: I,
     f: F,
@@ -151,7 +151,7 @@ where
 ///
 /// This initializer is created by calling the [`InitPin::unwrap_or`] method or
 /// by using the [`unwrap_or()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct UnwrapOr<I1, I2, M> {
     init1: I1,
     init2: I2,
@@ -221,7 +221,7 @@ where
 ///
 /// This initializer is created by calling the [`InitPin::unwrap_or_else`]
 /// method or by using the [`unwrap_or_else()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct UnwrapOrElse<I, F> {
     init1: I,
     f: F,
@@ -290,7 +290,7 @@ where
 /// This initializer is created by calling the [`Init::map_err`] or
 /// [`InitPin::map_err`] methods, or by using the [`map_err()`] factory
 /// function.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct MapErr<I, F> {
     init: I,
     f: F,

@@ -534,12 +534,12 @@ impl<'a, F: ?Sized + Future> Future for POwn<'a, F> {
 /// ```
 ///
 /// ```rust
-/// use placid::{into_pown, Own, POwn, Place};
+/// use placid::{into_pown, Place};
 /// use std::rc::Rc;
 ///
 /// let mut place;
 /// {
-///     let pown: POwn<u32> = into_pown!(place <- Rc::pin(200u32));
+///     let pown = into_pown!(place <- Rc::pin(200));
 ///     assert_eq!(*pown, 200);
 ///
 ///     // `drop(pown)` alone is not enough to end the borrow of `place`,
@@ -547,7 +547,7 @@ impl<'a, F: ?Sized + Future> Future for POwn<'a, F> {
 ///     // ensuring proper drop semantics if `pown` get `mem::forget`ed. Thus,
 ///     // we need a brace scope here.
 /// }
-/// let reuse: Own<u32> = place.write(300u32);
+/// let reuse = place.write(300);
 /// assert_eq!(*reuse, 300);
 /// ```
 ///

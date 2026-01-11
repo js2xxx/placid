@@ -9,12 +9,13 @@ use crate::{
 /// Initializes a place with a directly-provided value.
 ///
 /// This initializer is created by the [`value()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct Value<T>(T);
 
 impl<T> InitPin<T> for Value<T> {
     type Error = Infallible;
 
+    #[inline]
     fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, T>,
@@ -27,6 +28,7 @@ impl<T> InitPin<T> for Value<T> {
 }
 
 impl<T> Init<T> for Value<T> {
+    #[inline]
     fn init(self, mut place: Uninit<'_, T>) -> InitResult<'_, T, Infallible> {
         (*place).write(self.0);
         // SAFETY: The place is now initialized.
@@ -39,8 +41,9 @@ impl<T> Init<T> for Value<T> {
 /// This is a convenience factory function for creating a [`Value`] initializer.
 /// The value is moved into the place and cannot fail.
 ///
-/// This is typically not needed directly, as the [`own!`] macro provides a
-/// more ergonomic interface:
+/// This is typically not needed directly, as all types that implement `Clone`
+/// automatically implement `IntoInit` for `Value<T>`, allowing their objects to
+/// be used directly as initializers.
 ///
 /// ```rust
 /// use placid::own;
@@ -62,11 +65,12 @@ impl<T> Init<T> for Value<T> {
 ///
 /// [`Value`]: crate::init::Value
 /// [`own!`]: macro@crate::own
+#[inline]
 pub const fn value<T>(value: T) -> Value<T> {
     Value(value)
 }
 
-impl<T> IntoInit<T, Value<T>> for T {
+impl<T: Clone> IntoInit<T, Value<T>> for T {
     type Init = Value<T>;
     type Error = Infallible;
 
@@ -78,7 +82,7 @@ impl<T> IntoInit<T, Value<T>> for T {
 /// Initializes a place by calling a closure that returns a Result.
 ///
 /// This initializer is created by the [`try_with()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct TryWith<F>(F);
 
 impl<T, E, F> InitPin<T> for TryWith<F>
@@ -87,13 +91,18 @@ where
 {
     type Error = E;
 
+    #[inline]
     fn init_pin<'a, 'b>(
         self,
-        place: Uninit<'a, T>,
+        mut place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
     ) -> InitPinResult<'a, 'b, T, E> {
         match (self.0)() {
-            Ok(value) => Ok(place.write_pin(value, slot)),
+            Ok(value) => {
+                (*place).write(value);
+                // SAFETY: The place is now initialized.
+                Ok(unsafe { place.assume_init_pin(slot) })
+            }
             Err(e) => Err(InitPinError { error: e, place, slot }),
         }
     }
@@ -103,9 +112,14 @@ impl<T, F, E> Init<T> for TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
 {
-    fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, E> {
+    #[inline]
+    fn init(self, mut place: Uninit<'_, T>) -> InitResult<'_, T, E> {
         match (self.0)() {
-            Ok(value) => Ok(place.write(value)),
+            Ok(value) => {
+                (*place).write(value);
+                // SAFETY: The place is now initialized.
+                Ok(unsafe { place.assume_init() })
+            }
             Err(e) => Err(InitError { error: e, place }),
         }
     }
@@ -143,6 +157,7 @@ where
 /// ```
 ///
 /// [`with`]: crate::init::with
+#[inline]
 pub const fn try_with<T, F, E>(f: F) -> TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
@@ -157,6 +172,7 @@ where
     type Init = TryWith<F>;
     type Error = E;
 
+    #[inline]
     fn into_init(self) -> Self::Init {
         TryWith(self)
     }
@@ -165,7 +181,7 @@ where
 /// Initializes a place by calling a closure that returns a value.
 ///
 /// This initializer is created by the [`with()`] factory function.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct With<F>(F);
 
 impl<T, F> InitPin<T> for With<F>
@@ -174,12 +190,15 @@ where
 {
     type Error = Infallible;
 
+    #[inline]
     fn init_pin<'a, 'b>(
         self,
-        place: Uninit<'a, T>,
+        mut place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
     ) -> InitPinResult<'a, 'b, T, Infallible> {
-        place.try_write_pin::<_, Value<T>>((self.0)(), slot)
+        (*place).write((self.0)());
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init_pin(slot) })
     }
 }
 
@@ -187,8 +206,11 @@ impl<T, F> Init<T> for With<F>
 where
     F: FnOnce() -> T,
 {
-    fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, Infallible> {
-        place.try_write((self.0)())
+    #[inline]
+    fn init(self, mut place: Uninit<'_, T>) -> InitResult<'_, T, Infallible> {
+        (*place).write((self.0)());
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init() })
     }
 }
 
@@ -217,6 +239,7 @@ where
 /// ```
 ///
 /// [`own!`]: macro@crate::own
+#[inline]
 pub const fn with<T, F>(f: F) -> With<F>
 where
     F: FnOnce() -> T,
@@ -231,6 +254,7 @@ where
     type Init = With<F>;
     type Error = Infallible;
 
+    #[inline]
     fn into_init(self) -> Self::Init {
         With(self)
     }
