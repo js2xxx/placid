@@ -654,7 +654,7 @@ impl_std_alloc!(Box, Arc, Rc);
 ///
 /// The macro converts the given expression into an owned place by extracting
 /// the value inside the container. The resulting owned reference can be used
-/// like any other owned reference.
+/// like any other `&own T`.
 ///
 /// For the pinned counterpart, see the [`into_pown!`] macro.
 ///

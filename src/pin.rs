@@ -530,12 +530,12 @@ impl<'a, F: ?Sized + Future> Future for POwn<'a, F> {
     }
 }
 
-/// Creates a new [pinned owned reference] initialized with the given
-/// expression.
+/// Creates an [pinned owned reference] from a container, extracting the
+/// contained value.
 ///
 /// The macro converts the given expression into a pinned owned place by
-/// extracting the value inside the container. The resulting pinned owned
-/// reference can be used like any other owned reference.
+/// extracting the value inside the container. The result can be used like any
+/// other `&pin own T`.
 ///
 /// For the unpinned counterpart, see [`into_own!`].
 ///
