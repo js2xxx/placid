@@ -15,7 +15,7 @@
 //! and the [`into_pown!`] macro.
 //!
 //! [drop slots]: crate::drop_slot
-//! [`POwn<T>`]: crate::POwn
+//! [`POwn<T>`]: crate::pin::POwn
 //! [`pown!`]: crate::pown
 //! [`IntoOwn`]: crate::owned::IntoOwn
 //! [`into_pown!`]: crate::into_pown
@@ -32,7 +32,7 @@ use core::{
     task::{Context, Poll},
 };
 
-use crate::{Own, Place, Uninit};
+use crate::{owned::Own, place::Place, uninit::Uninit};
 
 /// A slot that holds and manages the lifetime of a pinned owned value.
 ///
@@ -150,7 +150,7 @@ impl<'a, 'b, T: ?Sized> DropSlot<'a, 'b, T> {
 /// # Examples
 ///
 /// ```rust
-/// use placid::{own, Own};
+/// use placid::prelude::*;
 ///
 /// let owned = own!(String::from("Hello"));
 /// let drop_slot = placid::drop_slot!();
@@ -181,7 +181,7 @@ macro_rules! drop_slot {
 /// # Examples
 ///
 /// ```rust
-/// use placid::{pown, Own};
+/// use placid::prelude::*;
 ///
 /// let pinned = pown!(vec![1, 2, 3]);
 /// // The value is now pinned and cannot be moved
@@ -223,7 +223,7 @@ macro_rules! pown {
         super let mut place = ::core::mem::MaybeUninit::uninit();
         super let mut slot = $crate::pin::DroppingSlot::new();
         let drop_slot = unsafe { $crate::pin::DropSlot::new_unchecked(&mut slot) };
-        $crate::Place::write_pin(&mut place, $e, drop_slot)
+        $crate::place::Place::write_pin(&mut place, $e, drop_slot)
     }};
 }
 
@@ -238,7 +238,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{own, Own};
+    /// use placid::prelude::*;
     ///
     /// let owned = own!(42i32);
     /// let drop_slot = placid::drop_slot!();
@@ -246,7 +246,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// // Pinned value is now created
     /// ```
     ///
-    /// [`Own::into_pin`]: crate::Own::into_pin
+    /// [`Own::into_pin`]: crate::owned::Own::into_pin
     pub fn new<'a>(own: Own<'a, T>, slot: DropSlot<'a, 'b, T>) -> Self {
         let inner = own.inner;
         let drop_flag = slot.0.assign(own);
@@ -341,7 +341,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::POwn;
+    /// use placid::prelude::*;
     ///
     /// let mut pinned = placid::pown!(String::from("hello"));
     /// let uninit = POwn::drop(pinned);
@@ -362,7 +362,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::POwn;
+    /// use placid::prelude::*;
     ///
     /// let mut pinned = placid::pown!(42i32); // i32 is Unpin
     /// let unpinned = POwn::into_inner(pinned);
@@ -421,7 +421,7 @@ impl<'a, T: Clone> POwn<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{pown, POwn};
+    /// use placid::prelude::*;
     ///
     /// let pinned = placid::pown!(String::from("hello"));
     /// let mut place = core::mem::MaybeUninit::uninit();
@@ -444,7 +444,7 @@ impl<'b, T: Default> POwn<'b, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{pown, POwn};
+    /// use placid::prelude::*;
     ///
     /// let mut place = core::mem::MaybeUninit::uninit();
     /// let drop_slot = placid::drop_slot!();
@@ -527,14 +527,14 @@ impl<'a, F: ?Sized + Future> Future for POwn<'a, F> {
 /// # Examples
 ///
 /// ```rust
-/// use placid::into_pown;
+/// use placid::prelude::*;
 ///
 /// let pown = into_pown!(Box::pin(100u32));
 /// assert_eq!(*pown, 100);
 /// ```
 ///
 /// ```rust
-/// use placid::{into_pown, Place};
+/// use placid::prelude::*;
 /// use std::rc::Rc;
 ///
 /// let mut place;
@@ -551,7 +551,7 @@ impl<'a, F: ?Sized + Future> Future for POwn<'a, F> {
 /// assert_eq!(*reuse, 300);
 /// ```
 ///
-/// [pinned owned reference]: crate::POwn
+/// [pinned owned reference]: crate::pin::POwn
 /// [`into_own!`]: crate::into_own!
 /// [`IntoOwn`]: crate::owned::IntoOwn
 #[macro_export]
@@ -563,7 +563,7 @@ macro_rules! into_pown {
         let pinned = $e;
         let init = unsafe { Pin::into_inner_unchecked(pinned) };
         $p = $crate::owned::IntoOwn::into_own_place(init);
-        unsafe { $crate::Own::into_pin($crate::Own::from_mut(&mut $p), $slot) }
+        unsafe { $crate::owned::Own::into_pin($crate::owned::Own::from_mut(&mut $p), $slot) }
     }};
     ($p:ident <- $e:expr) => {{
         use ::core::pin::Pin;
@@ -574,7 +574,7 @@ macro_rules! into_pown {
         let pinned = $e;
         let init = unsafe { Pin::into_inner_unchecked(pinned) };
         $p = $crate::owned::IntoOwn::into_own_place(init);
-        unsafe { $crate::Own::into_pin($crate::Own::from_mut(&mut $p), slot) }
+        unsafe { $crate::owned::Own::into_pin($crate::owned::Own::from_mut(&mut $p), slot) }
     }};
     ($e:expr) => {{
         super let mut p;

@@ -8,8 +8,9 @@
 use core::{convert::Infallible, fmt, pin::Pin};
 
 use crate::{
-    Own, Uninit,
+    owned::Own,
     pin::{DropSlot, POwn},
+    uninit::Uninit,
 };
 
 /// An error that occurs during initialization of a place.
@@ -134,11 +135,11 @@ pub trait InitPin<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{pown, POwn, init::*};
+    /// use placid::prelude::*;
     /// use core::pin::Pin;
     ///
     /// let owned: POwn<Vec<_>> = pown!(
-    ///     value(vec![1, 2, 3]).and_pin(|mut v| v.as_mut().push(4))
+    ///     init::value(vec![1, 2, 3]).and_pin(|mut v| v.as_mut().push(4))
     /// );
     /// assert_eq!(*owned, [1, 2, 3, 4]);
     /// ```
@@ -156,12 +157,12 @@ pub trait InitPin<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{own, Own, init::*};
+    /// use placid::prelude::*;
     ///
-    /// let owned: Own<u32> = own!(value(10u32).or(20u32));
+    /// let owned: Own<u32> = own!(init::value(10u32).or(20u32));
     /// assert_eq!(*owned, 10);
     ///
-    /// let failed: Own<u32> = own!(try_with(|| u32::try_from(-1i32)).or(30u32));
+    /// let failed: Own<u32> = own!(init::try_with(|| u32::try_from(-1i32)).or(30u32));
     /// assert_eq!(*failed, 30);
     /// ```
     fn or<M, I2>(self, other: I2) -> Or<Self, I2, M>
@@ -180,11 +181,11 @@ pub trait InitPin<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{own, Own, init::*};
+    /// use placid::prelude::*;
     ///
-    /// let owned: Own<u32> = own!(try_with(|| u32::try_from(-1i32)).or_else(|err| {
+    /// let owned: Own<u32> = own!(init::try_with(|| u32::try_from(-1i32)).or_else(|err| {
     ///     println!("Initialization failed with error: {}", err);
-    ///     value(42u32)
+    ///     init::value(42u32)
     /// }));
     /// assert_eq!(*owned, 42);
     /// ```
@@ -202,13 +203,13 @@ pub trait InitPin<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{own, init::*};
+    /// use placid::prelude::*;
     ///
-    /// let owned = own!(value(10u32).unwrap_or(20u32));
+    /// let owned = own!(init::value(10u32).unwrap_or(20u32));
     /// assert_eq!(*owned, 10);
     ///
     /// let failed = own!(
-    ///     try_with(|| u32::try_from(-1i32)).unwrap_or(30u32)
+    ///     init::try_with(|| u32::try_from(-1i32)).unwrap_or(30u32)
     /// );
     /// assert_eq!(*failed, 30);
     /// ```
@@ -225,13 +226,13 @@ pub trait InitPin<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{own, init::*};
+    /// use placid::prelude::*;
     ///
     /// let owned = own!(
-    ///     try_with(|| u32::try_from(-1i32))
+    ///     init::try_with(|| u32::try_from(-1i32))
     ///         .unwrap_or_else(|err| {
     ///             println!("Initialization failed with error: {}", err);
-    ///             value(42u32)
+    ///             init::value(42u32)
     ///         })
     /// );
     /// assert_eq!(*owned, 42);
@@ -249,11 +250,11 @@ pub trait InitPin<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{uninit, init::*};
+    /// use placid::prelude::*;
     ///
     /// let mut uninit = uninit!(i32);
     /// let res = uninit.try_write(
-    ///     try_with(|| -> Result<_, &str> { Err("initialization failed") })
+    ///     init::try_with(|| -> Result<_, &str> { Err("initialization failed") })
     ///         .map_err(|e| format!("Error occurred: {}", e))
     /// );
     /// assert!(res.is_err());
@@ -362,7 +363,7 @@ pub trait Init<T: ?Sized>: InitPin<T> {
     /// Returns an [owned reference] on success, or an [`InitError`]
     /// containing the error and the failed place.
     ///
-    /// [owned reference]: crate::Own
+    /// [owned reference]: crate::owned::Own
     fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, Self::Error>;
 
     /// Chains a closure to execute after successful initialization.
@@ -374,9 +375,9 @@ pub trait Init<T: ?Sized>: InitPin<T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{own, Own, init::*};
+    /// use placid::prelude::*;
     ///
-    /// let owned: Own<Vec<_>> = own!(value(vec![1, 2, 3]).and(|v| v.push(4)));
+    /// let owned: Own<Vec<_>> = own!(init::value(vec![1, 2, 3]).and(|v| v.push(4)));
     /// assert_eq!(*owned, vec![1, 2, 3, 4]);
     /// ```
     fn and<F: FnOnce(&mut T)>(self, f: F) -> And<Self, F> {
@@ -411,6 +412,33 @@ impl<I: InitPin<T>, T: ?Sized> IntoInit<T> for I {
     }
 }
 
+// Factory functions & adapters
+
+mod and;
+pub use self::and::{And, AndPin, and, and_pin};
+
+mod or;
+pub use self::or::{
+    MapErr, Or, OrElse, UnwrapOr, UnwrapOrElse, map_err, or, or_else, unwrap_or, unwrap_or_else,
+};
+
+mod raw;
+pub use self::raw::{Raw, RawPin, TryRaw, TryRawPin, raw, raw_pin, try_raw, try_raw_pin};
+
+mod slice;
+pub use self::slice::{
+    Repeat, RepeatWith, Slice, SliceError, Str, repeat, repeat_with, slice, str,
+};
+
+mod value;
+pub use self::value::{TryWith, Value, With, try_with, value, with};
+
+// Implemetations for the standard library types
+
+mod imp;
+
+// Structural initializers
+
 /// Types that can be structurally initialized in a pinned place.
 ///
 /// This trait is automatically implemented for types that derive [`InitPin`].
@@ -420,7 +448,7 @@ impl<I: InitPin<T>, T: ?Sized> IntoInit<T> for I {
 /// Users should not implement this trait manually. It is intended to be
 /// automatically derived to ensure correct behavior.
 ///
-/// [`InitPin`]: macro@crate::InitPin
+/// [`InitPin`]: macro@InitPin
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be structurally pin-initialized",
     label = "`{Self}` cannot be structurally pin-initialized",
@@ -447,7 +475,7 @@ pub trait StructuralInitPin<'b> {
 /// provides a method to structurally initialize the type in a non-pinned
 /// context.
 ///
-/// [`Init`]: macro@crate::Init
+/// [`Init`]: macro@Init
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be structurally initialized",
     label = "`{Self}` cannot be structurally initialized",
@@ -461,27 +489,196 @@ pub trait StructuralInit<'b>: StructuralInitPin<'b> {
     fn __builder_init(place: Uninit<'b, Self>) -> Self::__BuilderInit;
 }
 
-// Factory functions & adapters
-
-mod and;
-pub use self::and::{And, AndPin, and, and_pin};
-
-mod or;
-pub use self::or::{
-    MapErr, Or, OrElse, UnwrapOr, UnwrapOrElse, map_err, or, or_else, unwrap_or, unwrap_or_else,
-};
-
-mod raw;
-pub use self::raw::{Raw, RawPin, TryRaw, TryRawPin, raw, raw_pin, try_raw, try_raw_pin};
-
-mod slice;
-pub use self::slice::{
-    Repeat, RepeatWith, Slice, SliceError, Str, repeat, repeat_with, slice, str,
-};
-
-mod value;
-pub use self::value::{TryWith, Value, With, try_with, value, with};
-
-// Implemetations for the standard library types
-
-mod imp;
+/// Marks a type as structurally initializable.
+///
+/// It provides a method to structurally initialize the type in an unpinned
+/// context. The initializer can be created by the [`macro@init!`] macro.
+///
+/// It also implements [`StructuralInit`] for the derived type.
+///
+/// [`macro@Init`] and [`macro@InitPin`] are mutually exclusive; a type can
+/// derive either one or the other, depending on whether it supports unpinned or
+/// pinned initialization.
+///
+/// Types that derive `Init` automatically implement [`StructuralInit`]
+/// and [`StructuralInitPin`] (i.e., **auto-derives [`macro@InitPin`]
+/// without structural field pinning**. Please use it carefully with other `pin`
+/// based crates, such as `pin-projection`).
+///
+/// # Examples
+///
+/// A simple usage example (although not practical):
+///
+/// ```rust
+/// use placid::prelude::*;
+///
+/// #[derive(Init)]
+/// struct Point {
+///     x: i32,
+///     y: i32,
+/// }
+///
+/// let owned = own!(init!(Point { x: 10, y: 20 }));
+/// assert_eq!(owned.x, 10);
+/// assert_eq!(owned.y, 20);
+/// ```
+///
+/// For more complex usage, see the [crate-level documentation](crate) for
+/// more information.
+pub use placid_macro::Init;
+/// Marks a type as structurally pin-initializable.
+///
+/// It provides a method to structurally initialize the type in a pinned
+/// context. The initializer can be created by the [`macro@init!`] macro.
+///
+/// It also implements [`StructuralInitPin`] for the derived type.
+///
+/// [`macro@Init`] and [`macro@InitPin`] are mutually exclusive; a type can
+/// derive either one or the other, depending on whether it supports unpinned or
+/// pinned initialization.
+///
+/// Types that derive `InitPin` automatically implement
+/// [`StructuralInitPin`].
+///
+/// # Examples
+///
+/// A simple usage example (although not practical):
+///
+/// ```rust
+/// use placid::prelude::*;
+/// use std::{marker::PhantomPinned, pin::Pin};
+///
+/// #[derive(InitPin, Debug)]
+/// struct Pinned {
+///     ptr: *const Pinned,
+///     marker: PhantomPinned,
+/// }
+///
+/// let owned: POwn<Pinned> = pown!(init_pin!(Pinned {
+///     ptr: std::ptr::null(),
+///     marker: PhantomPinned,
+/// })
+/// .and_pin(|this| unsafe {
+///     // SAFETY: We are initializing the self-referential pointer.
+///     let this = Pin::into_inner_unchecked(this);
+///     this.ptr = std::ptr::from_ref(this);
+/// }));
+///
+/// assert_eq!(owned.ptr, &*owned);
+/// ```
+///
+/// For more complex usage, see the [crate-level documentation](crate) for
+/// more information.
+pub use placid_macro::InitPin;
+/// Creates an initializer for a [structurally initialized] type.
+///
+/// # Syntax
+///
+/// The macro accepts standard Rust expressions, but it will expand those which
+/// match the following pattern into structured initializers:
+///
+/// ```ignore
+/// init!(
+///     // Specify an optional error type for
+///     // sub-initializers to convert into.
+///     // Otherwise, no conversion is performed.
+///     #[err_into(ErrorType)]
+///     TypeName {
+///         field: initializer,
+///         // Sub-initializers can also have their own error types.
+///         #[err_into(SubErrorType)]
+///         nested: NestedType {
+///             subfield: initializer,
+///             ...
+///         }
+///         // Mark `err_into` without an argument to indicate
+///         // automatic `Into::into`.
+///         #[err_into]
+///         nested2: Tuple(initializer, ...),
+///         ...
+///     }
+/// )
+/// ```
+///
+/// Expressions that do not match the above pattern are treated as-is.
+///
+/// # Examples
+///
+/// A simple usage example (although not practical):
+///
+/// ```rust
+/// use placid::prelude::*;
+///
+/// #[derive(Init)]
+/// struct Point {
+///     x: i32,
+///     y: i32,
+/// }
+///
+/// let owned = own!(init!(Point { x: 10, y: 20 }));
+/// assert_eq!(owned.x, 10);
+/// assert_eq!(owned.y, 20);
+/// ```
+///
+/// For more complex usage, see the [crate-level documentation](crate) for more
+/// information.
+///
+/// [structurally initialized]: macro@crate::Init
+pub use placid_macro::init;
+/// Creates a pin-initializer for a [structurally pin-initialized] type.
+///
+/// # Syntax
+///
+/// The macro accepts standard Rust expressions, but it will expand those which
+/// match the following pattern into structured initializers:
+///
+/// ```ignore
+/// init_pin!(
+///     // Specify an optional error type for
+///     // sub-initializers to convert into.
+///     // Otherwise, no conversion is performed.
+///     #[err_into(ErrorType)]
+///     TypeName {
+///         field: initializer,
+///         // Sub-initializers can also have their own error types.
+///         #[err_into(SubErrorType)]
+///         nested: NestedType {
+///             subfield: initializer,
+///             ...
+///         }
+///         // Pinned fields must be marked with `#[pin]`.
+///         #[pin]
+///         // Mark `err_into` without an argument to indicate
+///         // automatic `Into::into`.
+///         #[err_into]
+///         nested2: Tuple(initializer, ...),
+///         ...
+///     }
+/// )
+/// ```
+///
+/// Expressions that do not match the above pattern are treated as-is.
+///
+/// # Examples
+///
+/// A simple usage example (although not practical):
+///
+/// ```rust
+/// use placid::prelude::*;
+///
+/// #[derive(InitPin)]
+/// struct Point {
+///     x: i32,
+///     y: i32,
+/// }
+///
+/// let owned = pown!(init_pin!(Point { x: 10, y: 20 }));
+/// assert_eq!(owned.x, 10);
+/// assert_eq!(owned.y, 20);
+/// ```
+///
+/// For more complex usage, see the [crate-level documentation](crate) for more
+/// information.
+///
+/// [structurally pin-initialized]: macro@crate::InitPin
+pub use placid_macro::init_pin;

@@ -9,7 +9,7 @@
 //! For converting containers into owned references, see the [`IntoOwn`] trait
 //! and the [`into_own!`] macro.
 //!
-//! [`Own<T>`]: crate::Own
+//! [`Own<T>`]: crate::owned::Own
 //! [`own!`]: crate::own
 //! [`IntoOwn`]: crate::owned::IntoOwn
 //! [`into_own!`]: crate::into_own
@@ -42,7 +42,7 @@ use crate::{
 /// # Examples
 ///
 /// ```rust
-/// use placid::Own;
+/// use placid::prelude::*;
 ///
 /// let mut my_place: Own<i32> = placid::own!(42);
 /// assert_eq!(*my_place, 42);
@@ -68,7 +68,7 @@ pub type Own<'a, T> = PlaceRef<'a, T, Owned>;
 macro_rules! own {
     ($e:expr) => {{
         super let mut place = ::core::mem::MaybeUninit::uninit();
-        $crate::Place::write(&mut place, $e)
+        $crate::place::Place::write(&mut place, $e)
     }};
 }
 
@@ -120,9 +120,11 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// let owned = placid::own!(String::from("Hello"));
+    /// use placid::prelude::*;
+    ///
+    /// let owned = own!(String::from("Hello"));
     /// let drop_slot = placid::drop_slot!();
-    /// let pinned = placid::Own::into_pin(owned, drop_slot);
+    /// let pinned = Own::into_pin(owned, drop_slot);
     /// // The value is now pinned and cannot be moved
     /// ```
     pub fn into_pin<'b>(this: Self, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T> {
@@ -136,8 +138,10 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// let my_place = placid::own!(42i32);
-    /// let ptr = placid::Own::as_ptr(&my_place);
+    /// use placid::prelude::*;
+    ///
+    /// let my_place = own!(42i32);
+    /// let ptr = Own::as_ptr(&my_place);
     /// assert_eq!(unsafe { *ptr }, 42);
     /// ```
     pub const fn as_ptr(this: &Self) -> *const T {
@@ -151,8 +155,10 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// let mut my_place = placid::own!(42i32);
-    /// let ptr = placid::Own::as_mut_ptr(&mut my_place);
+    /// use placid::prelude::*;
+    ///
+    /// let mut my_place = own!(42i32);
+    /// let ptr = Own::as_mut_ptr(&mut my_place);
     /// unsafe { *ptr = 100; }
     /// assert_eq!(*my_place, 100);
     /// ```
@@ -166,8 +172,9 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::Own;
-    /// let my_place = placid::own!(String::from("Hello"));
+    /// use placid::prelude::*;
+    ///
+    /// let my_place = own!(String::from("Hello"));
     /// let leaked_str: &mut String = Own::leak(my_place);
     /// leaked_str.push_str(", world!");
     /// assert_eq!(leaked_str, "Hello, world!");
@@ -193,10 +200,12 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// let my_place = placid::own!(String::from("Hello"));
-    /// let ptr = placid::Own::into_raw(my_place);
+    /// use placid::prelude::*;
+    ///
+    /// let my_place = own!(String::from("Hello"));
+    /// let ptr = Own::into_raw(my_place);
     /// unsafe {
-    ///     let recovered = placid::Own::from_raw(ptr);
+    ///     let recovered = Own::from_raw(ptr);
     ///     assert_eq!(&*recovered, "Hello");
     /// }
     /// ```
@@ -216,9 +225,9 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::Own;
+    /// use placid::prelude::*;
     ///
-    /// let my_place = placid::own!(vec![1, 2, 3]);
+    /// let my_place = own!(vec![1, 2, 3]);
     /// let ptr = Own::into_raw(my_place);
     /// let recovered: Own<Vec<i32>> = unsafe { Own::from_raw(ptr) };
     /// assert_eq!(&*recovered, &[1, 2, 3]);
@@ -242,7 +251,7 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{Place, Own, Uninit};
+    /// use placid::prelude::*;
     /// use core::mem::MaybeUninit;
     ///
     /// let mut uninit_place = MaybeUninit::new(10);
@@ -259,9 +268,9 @@ impl<'a, T: ?Sized> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{Own, Uninit};
+    /// use placid::prelude::*;
     ///
-    /// let my_place = placid::own!(String::from("Hello"));
+    /// let my_place = own!(String::from("Hello"));
     /// let uninit_place = Own::drop(my_place);
     /// // At this point, the String has been dropped.
     /// // We can now re-initialize the place.
@@ -284,9 +293,9 @@ impl<'a, T> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{Own, Uninit};
+    /// use placid::prelude::*;
     ///
-    /// let my_place: Own<i32> = placid::own!(100);
+    /// let my_place: Own<i32> = own!(100);
     /// let (value, uninit_place): (i32, Uninit<i32>) = Own::take(my_place);
     /// assert_eq!(value, 100);
     /// // The place is now uninitialized, we can re-initialize it.
@@ -315,7 +324,7 @@ macro_rules! impl_downcast {
             /// # Examples
             ///
             /// ```rust,ignore
-            /// use placid::{Own, own};
+            /// use placid::prelude::*;
             /// use std::any::Any;
             ///
             #[doc = concat!("let value: Own<dyn ", stringify!($($t)*), "> = own!(42i32);")]
@@ -343,7 +352,7 @@ macro_rules! impl_downcast {
             /// # Examples
             ///
             /// ```rust,ignore
-            /// use placid::{Own, own};
+            /// use placid::prelude::*;
             /// use std::any::Any;
             ///
             #[doc = concat!("let value: Own<dyn ", stringify!($($t)*), "> = own!(\"hello\");")]
@@ -400,7 +409,7 @@ impl<'a, T: Default> Own<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::Own;
+    /// use placid::prelude::*;
     ///
     /// let mut place = core::mem::MaybeUninit::uninit();
     /// let owned: Own<Vec<i32>> = Own::default(&mut place);
@@ -544,7 +553,7 @@ mod fn_impl;
 /// # Examples
 ///
 /// ```rust
-/// use placid::{into_own, Own, owned::IntoOwn};
+/// use placid::prelude::*;
 /// use core::mem::MaybeUninit;
 ///
 /// fn use_owned<T: IntoOwn>(value: T) -> T::Place {
@@ -560,7 +569,7 @@ mod fn_impl;
 /// // The place now can be re-initialized or used further.
 /// ```
 ///
-/// [owned]: crate::Own
+/// [owned]: crate::owned::Own
 /// [`into_own!`]: crate::into_own!
 /// [`into_pown!`]: crate::into_pown!
 pub unsafe trait IntoOwn: Deref + Sized {
@@ -621,13 +630,13 @@ impl_std_alloc!(Box, Arc, Rc);
 /// # Examples
 ///
 /// ```rust
-/// use placid::{into_own, Own};
+/// use placid::prelude::*;
 /// let my_place: Own<i32> = into_own!(Box::new(55));
 /// assert_eq!(*my_place, 55);
 /// ```
 ///
 /// ```rust
-/// use placid::{into_own, Own, Place};
+/// use placid::prelude::*;
 /// use std::rc::Rc;
 ///
 /// let mut place; // Rc<MaybeUninit<String>>
@@ -639,14 +648,14 @@ impl_std_alloc!(Box, Arc, Rc);
 /// assert_eq!(&*owned_again, "World");
 /// ```
 ///
-/// [owned reference]: crate::Own
+/// [owned reference]: crate::owned::Own
 /// [`into_pown!`]: crate::into_pown!
 #[macro_export]
 #[allow_internal_unstable(super_let)]
 macro_rules! into_own {
     ($p:ident <- $e:expr) => {{
         $p = $crate::owned::IntoOwn::into_own_place($e);
-        unsafe { $crate::Own::from_mut(&mut $p) }
+        unsafe { $crate::owned::Own::from_mut(&mut $p) }
     }};
     ($e:expr) => {{
         super let mut p;

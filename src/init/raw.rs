@@ -1,9 +1,10 @@
 use core::{convert::Infallible, marker::PhantomData};
 
 use crate::{
-    Own, Uninit,
     init::{Init, InitPin, InitPinResult, InitResult},
+    owned::Own,
     pin::{DropSlot, POwn},
+    uninit::Uninit,
 };
 
 type PhantomResult<T, E> = PhantomData<(fn() -> T, fn() -> E)>;

@@ -22,9 +22,9 @@ use crate::{
 /// # Examples
 ///
 /// ```rust
-/// use placid::Uninit;
+/// use placid::prelude::*;
 ///
-/// let my_place: Uninit<i32> = placid::uninit!();
+/// let my_place: Uninit<i32> = uninit!();
 /// ```
 pub type Uninit<'a, T> = PlaceRef<'a, T, Uninitialized>;
 
@@ -36,19 +36,20 @@ pub type Uninit<'a, T> = PlaceRef<'a, T, Uninitialized>;
 /// # Examples
 ///
 /// ```rust
-/// let my_uninit_place: placid::Uninit<u32> = placid::uninit!();
-/// let my_typed_uninit_place = placid::uninit!(u64);
+/// use placid::prelude::*;
+/// let my_uninit_place: Uninit<u32> = uninit!();
+/// let my_typed_uninit_place = uninit!(u64);
 /// ```
 #[macro_export]
 #[allow_internal_unstable(super_let)]
 macro_rules! uninit {
     () => {{
         super let mut place = ::core::mem::MaybeUninit::uninit();
-        $crate::Uninit::from_mut(&mut place)
+        $crate::uninit::Uninit::from_mut(&mut place)
     }};
     ($ty:ty) => {{
         super let mut place = ::core::mem::MaybeUninit::<$ty>::uninit();
-        $crate::Uninit::from_mut(&mut place)
+        $crate::uninit::Uninit::from_mut(&mut place)
     }};
 }
 
@@ -123,11 +124,13 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// let mut uninit: placid::Uninit<String> = placid::uninit!();
-    /// let ptr = placid::Uninit::into_raw(uninit);
+    /// use placid::prelude::*;
+    ///
+    /// let mut uninit: Uninit<String> = uninit!();
+    /// let ptr = Uninit::into_raw(uninit);
     /// unsafe {
     ///     std::ptr::write(ptr, String::from("Hello"));
-    ///     let owned = placid::Own::from_raw(ptr);
+    ///     let owned = Own::from_raw(ptr);
     ///     assert_eq!(&*owned, "Hello");
     /// }
     /// ```
@@ -147,9 +150,11 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
+    /// use placid::prelude::*;
+    ///
     /// let mut buffer = std::mem::MaybeUninit::uninit();
     /// let ptr = buffer.as_mut_ptr();
-    /// let mut uninit: placid::Uninit<i32> = unsafe { placid::Uninit::from_raw(ptr) };
+    /// let mut uninit: Uninit<i32> = unsafe { Uninit::from_raw(ptr) };
     /// unsafe {
     ///     std::ptr::write(uninit.as_mut_ptr(), 42);
     ///     let owned = uninit.assume_init();
@@ -169,8 +174,10 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
+    /// use placid::prelude::*;
+    ///
     /// let mut buffer = std::mem::MaybeUninit::uninit();
-    /// let mut uninit: placid::Uninit<i32> = placid::Uninit::from_mut(&mut buffer);
+    /// let mut uninit: Uninit<i32> = Uninit::from_mut(&mut buffer);
     /// unsafe {
     ///     std::ptr::write(uninit.as_mut_ptr(), 42);
     ///     let owned = uninit.assume_init();
@@ -189,7 +196,9 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// let mut uninit: placid::Uninit<i32> = placid::uninit!();
+    /// use placid::prelude::*;
+    ///
+    /// let mut uninit: Uninit<i32> = uninit!();
     /// let ptr = uninit.as_mut_ptr();
     /// unsafe {
     ///     std::ptr::write(ptr, 42);
@@ -214,7 +223,9 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// let mut uninit: placid::Uninit<i32> = placid::uninit!(i32);
+    /// use placid::prelude::*;
+    ///
+    /// let mut uninit: Uninit<i32> = uninit!(i32);
     /// unsafe {
     ///     std::ptr::write(uninit.as_mut_ptr(), 42);
     ///     // Now assume it's initialized and recover the owned reference
@@ -246,11 +257,9 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::drop_slot;
-    ///
     /// // Initialize a value in place first
     /// let mut uninit = placid::uninit!(String);
-    /// let drop_slot = drop_slot!();
+    /// let drop_slot = placid::drop_slot!();
     /// unsafe {
     ///     uninit.as_mut_ptr().write(String::from("Pinned value"));
     ///

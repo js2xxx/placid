@@ -89,7 +89,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::Place;
+    /// use placid::prelude::*;
     /// use core::mem::MaybeUninit;
     ///
     /// let mut place = MaybeUninit::uninit();
@@ -114,11 +114,11 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::{Place, drop_slot};
+    /// use placid::prelude::*;
     /// use core::mem::MaybeUninit;
     ///
     /// let mut place = MaybeUninit::uninit();
-    /// let drop_slot = drop_slot!();
+    /// let drop_slot = placid::drop_slot!();
     /// let owned = Place::write_pin(&mut place, 42, drop_slot);
     /// assert_eq!(*owned, 42);
     /// ```
@@ -135,8 +135,6 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// This method is similar to [`Uninit::write`], but instead of returning an
     /// owned reference, it returns the place itself with an initialized state.
     ///
-    /// If type inference fails, use [`Placed::init`] instead.
-    ///
     /// # Panics
     ///
     /// This method will panic if the initialization fails.
@@ -144,7 +142,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::Place;
+    /// use placid::prelude::*;
     ///
     /// let p = Box::<i32>::new_uninit().init(|| 42);
     /// assert_eq!(*p, 42);
@@ -164,8 +162,6 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// returning an owned reference, it returns the place itself with an
     /// initialized state.
     ///
-    /// If type inference fails, use [`Placed::try_init`] instead.
-    ///
     /// # Errors
     ///
     /// If the initialization fails, this method returns a tuple containing the
@@ -174,7 +170,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::Place;
+    /// use placid::prelude::*;
     ///
     /// let p = Box::<i32>::new_uninit();
     /// let result = p.try_init(|| Ok::<_, &str>(42));
@@ -209,8 +205,6 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// returning a pinned owned reference, it returns the place itself with
     /// a pinned initialized state.
     ///
-    /// If type inference fails, use [`Placed::init_pin`] instead.
-    ///
     /// # Panics
     ///
     /// This method will panic if the initialization fails.
@@ -218,7 +212,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::Place;
+    /// use placid::prelude::*;
     ///
     /// let place = Box::<i32>::new_uninit().init_pin(|| 42);
     /// assert_eq!(*place, 42);
@@ -239,8 +233,6 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// returning a pinned owned reference, it returns the place itself with a
     /// pinned initialized state.
     ///
-    /// If type inference fails, use [`Placed::try_init_pin`] instead.
-    ///
     /// # Errors
     ///
     /// If the initialization fails, this method returns a tuple containing
@@ -249,7 +241,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// # Examples
     ///
     /// ```rust
-    /// use placid::Place;
+    /// use placid::prelude::*;
     ///
     /// let place = Box::<i32>::new_uninit();
     /// let result = place.try_init_pin(|| Ok::<_, &str>(42));

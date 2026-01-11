@@ -1,6 +1,6 @@
 use std::{cell::Cell, marker::PhantomData};
 
-use placid::*;
+use placid::prelude::*;
 
 #[derive(InitPin)]
 struct TestStruct {

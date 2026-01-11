@@ -1,9 +1,10 @@
 use core::pin::Pin;
 
 use crate::{
-    Uninit,
     init::{Init, InitPin, InitPinResult, InitResult, IntoInit},
+    owned::Own,
     pin::DropSlot,
+    uninit::Uninit,
 };
 
 /// Chains initialization with a post-initialization closure for mutable access.
@@ -36,7 +37,7 @@ where
             Err(e) => return Err(e.into_pin(slot)),
         };
         (self.f)(&mut *own);
-        Ok(crate::Own::into_pin(own, slot))
+        Ok(Own::into_pin(own, slot))
     }
 }
 
@@ -58,9 +59,9 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use placid::{own, Own, init::*};
+/// use placid::prelude::*;
 ///
-/// let owned: Own<Vec<_>> = own!(and(vec![1, 2, 3], |v| v.push(4)));
+/// let owned: Own<Vec<_>> = own!(init::and(vec![1, 2, 3], |v| v.push(4)));
 /// assert_eq!(*owned, vec![1, 2, 3, 4]);
 /// ```
 pub fn and<M, I, F, T: ?Sized>(init: I, f: F) -> And<I::Init, F>
@@ -108,10 +109,10 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use placid::{pown, POwn, init::*};
+/// use placid::prelude::*;
 /// use core::pin::Pin;
 ///
-/// let owned = pown!(and_pin(
+/// let owned = pown!(init::and_pin(
 ///     vec![1, 2, 3],
 ///     |mut v| v.as_mut().push(4),
 /// ));

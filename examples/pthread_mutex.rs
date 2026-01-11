@@ -7,11 +7,7 @@ use std::{
     pin::Pin,
 };
 
-use placid::{
-    InitPin, Place, Uninit,
-    init::{InitPinError, IntoInit, try_raw_pin},
-    init_pin, pown,
-};
+use placid::{init::InitPinError, prelude::*};
 
 pub struct RawMutex {
     lock: UnsafeCell<libc::pthread_mutex_t>,
@@ -28,7 +24,7 @@ impl Drop for RawMutex {
 
 impl RawMutex {
     pub const fn new() -> impl InitPin<Self, Error = Error> {
-        try_raw_pin(|mut uninit: Uninit<Self>, slot| {
+        init::try_raw_pin(|mut uninit: Uninit<Self>, slot| {
             let ptr = uninit.as_mut_ptr() as *mut libc::pthread_mutex_t;
             unsafe {
                 ptr.write(libc::PTHREAD_MUTEX_INITIALIZER);
@@ -150,7 +146,7 @@ struct TwoMutexes {
 
 fn main() {
     {
-        let m = Box::new_uninit().init_pin(Mutex::new(123));
+        let m = Box::pin_with(Mutex::new(123));
         println!("{}", *m.lock().unwrap());
         *m.lock().unwrap() = 2;
         println!("{}", *m.lock().unwrap());

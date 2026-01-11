@@ -4,9 +4,10 @@ use core::{
 };
 
 use crate::{
-    Own, Uninit,
     init::{Init, InitError, InitPin, InitPinResult, InitResult, IntoInit},
+    owned::Own,
     pin::DropSlot,
+    uninit::Uninit,
 };
 
 #[inline]
@@ -145,7 +146,7 @@ impl<T: Clone, const N: usize> Init<[T; N]> for Slice<'_, T> {
 /// # Examples
 ///
 /// ```rust
-/// use placid::{uninit, Uninit};
+/// use placid::prelude::*;
 ///
 /// // Initialize a slice with integers
 /// let source = [1, 2, 3, 4, 5];
@@ -156,7 +157,7 @@ impl<T: Clone, const N: usize> Init<[T; N]> for Slice<'_, T> {
 ///
 /// Error on length mismatch:
 /// ```rust
-/// use placid::{uninit, Uninit};
+/// use placid::prelude::*;
 ///
 /// let source = [1, 2, 3];
 /// let mut uninit = uninit!([i32; 5]); // Different size
@@ -236,11 +237,11 @@ impl Init<str> for Str<'_> {
 /// # Examples
 ///
 /// ```rust
-/// use placid::{uninit, Uninit, init};
+/// use placid::prelude::*;
 ///
 /// let source = "Hello, world!";
 /// let mut uninit: Uninit<str> = uninit!([u8; 13]); // Pre-allocated for 13 bytes
-/// let owned = uninit.write(init::str(source));
+/// let owned = uninit.write(source);
 /// assert_eq!(&*owned, "Hello, world!");
 /// ```
 pub const fn str(s: &str) -> Str<'_> {
@@ -316,10 +317,10 @@ impl<T: Clone, const N: usize> Init<[T; N]> for Repeat<T> {
 /// Filling an array with a repeated value:
 ///
 /// ```rust
-/// use placid::{uninit, Uninit, init::repeat};
+/// use placid::prelude::*;
 ///
 /// let place = uninit!([i32; 3]);
-/// let owned = place.write(repeat(5));
+/// let owned = place.write(init::repeat(5));
 /// assert_eq!(*owned, [5, 5, 5]);
 /// ```
 pub const fn repeat<T: Clone>(value: T) -> Repeat<T> {
@@ -398,10 +399,10 @@ where
 ///
 /// Creating an array of indices:
 /// ```rust
-/// use placid::{uninit, Uninit, init::repeat_with};
+/// use placid::prelude::*;
 ///
 /// let mut uninit = uninit!([usize; 5]);
-/// let owned = uninit.write(repeat_with(|i| i * 2));
+/// let owned = uninit.write(init::repeat_with(|i| i * 2));
 /// assert_eq!(&*owned, &[0, 2, 4, 6, 8]);
 /// ```
 pub const fn repeat_with<T, F>(f: F) -> RepeatWith<F>

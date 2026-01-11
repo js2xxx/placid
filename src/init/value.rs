@@ -1,9 +1,9 @@
 use core::convert::Infallible;
 
 use crate::{
-    Uninit,
     init::{Init, InitError, InitPin, InitPinError, InitPinResult, InitResult, IntoInit},
     pin::DropSlot,
+    uninit::Uninit,
 };
 
 /// Initializes a place with a directly-provided value.
@@ -46,7 +46,7 @@ impl<T> Init<T> for Value<T> {
 /// be used directly as initializers.
 ///
 /// ```rust
-/// use placid::own;
+/// use placid::prelude::*;
 ///
 /// let owned = own!(42);
 /// assert_eq!(*owned, 42);
@@ -56,10 +56,10 @@ impl<T> Init<T> for Value<T> {
 /// initializers:
 ///
 /// ```rust
-/// use placid::{uninit, Uninit, init::{value, Init}};
+/// use placid::prelude::*;
 ///
 /// let uninit: Uninit<i32> = uninit!();
-/// let owned = uninit.write(value(100).and(|v| *v += 23));
+/// let owned = uninit.write(init::value(100).and(|v| *v += 23));
 /// assert_eq!(*owned, 123);
 /// ```
 ///
@@ -134,10 +134,10 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use placid::{uninit, Uninit, init::try_with};
+/// use placid::prelude::*;
 ///
 /// let uninit: Uninit<u32> = uninit!();
-/// let result = uninit.try_write(try_with(|| {
+/// let result = uninit.try_write(init::try_with(|| {
 ///     // Some computation that might fail
 ///     if true {
 ///         Ok(42u32)
@@ -150,7 +150,7 @@ where
 ///
 /// // With a failing computation
 /// let uninit: Uninit<u32> = uninit!();
-/// let result = uninit.try_write(try_with(|| {
+/// let result = uninit.try_write(init::try_with(|| {
 ///     Err::<u32, &str>("failed")
 /// }));
 /// assert!(result.is_err());
@@ -222,17 +222,17 @@ where
 ///
 /// Using the `with()` function:
 /// ```rust
-/// use placid::{uninit, init::with};
+/// use placid::prelude::*;
 ///
 /// let uninit = uninit!(String);
-/// let owned = uninit.write(with(|| String::from("Lazy initialization")));
+/// let owned = uninit.write(init::with(|| String::from("Lazy initialization")));
 /// assert_eq!(&*owned, "Lazy initialization");
 /// ```
 ///
 /// Using with [`own!`] macro directly:
 ///
 /// ```rust
-/// use placid::{own, Own};
+/// use placid::prelude::*;
 ///
 /// let owned: Own<String> = own!(|| String::from("hello"));
 /// assert_eq!(&*owned, "hello");

@@ -180,7 +180,10 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                 #(#generics,)*
                 #typestate_impl
             > #where_clause {
-                uninit: ::placid::Uninit<#this_lifetime, #ident<#(#ty_generics),*>>,
+                uninit: ::placid::uninit::Uninit<
+                    #this_lifetime,
+                    #ident<#(#ty_generics),*>
+                >,
                 #slot_def
             }
 
@@ -348,7 +351,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                     Error = #error_ident,
                 >,
             {
-                use ::placid::{InitPin, Init};
+                use ::placid::init::{InitPin, Init};
                 let init = init.into_init();
 
                 #slot_creation
@@ -357,7 +360,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                 let field_place = unsafe {
                     let base = self.uninit.as_mut_ptr();
                     let field_ptr = &raw mut (*base).#field_name_cur;
-                    ::placid::Uninit::from_raw(field_ptr)
+                    ::placid::uninit::Uninit::from_raw(field_ptr)
                 };
 
                 match #init_call {
@@ -422,14 +425,14 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
 
         let result_ty = if let Some(pin_lifetime) = &pin_lifetime {
             quote_spanned! { mixed_site =>
-                ::placid::POwn<
+                ::placid::pin::POwn<
                     #pin_lifetime,
                     #ident<#(#ty_generics),*>,
                 >
             }
         } else {
             quote_spanned! { mixed_site =>
-                ::placid::Own<
+                ::placid::owned::Own<
                     #this_lifetime,
                     #ident<#(#ty_generics),*>,
                 >
@@ -520,7 +523,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
 
                 #[inline]
                 fn #structural_func(
-                    uninit: ::placid::Uninit<
+                    uninit: ::placid::uninit::Uninit<
                         #this_lifetime,
                         #ident<#(#ty_generics),*>,
                     >,

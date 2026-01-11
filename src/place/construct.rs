@@ -4,8 +4,8 @@
 use core::{alloc::Allocator, fmt, ops::Deref, pin::Pin};
 
 use crate::{
-    Place,
     init::{Init, IntoInit},
+    place::Place,
 };
 
 /// A place in memory that can be created with specified arguments.

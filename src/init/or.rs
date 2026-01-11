@@ -1,9 +1,9 @@
 use core::{convert::Infallible, marker::PhantomData};
 
 use crate::{
-    Init, InitPin, Uninit,
-    init::{InitPinResult, InitResult, IntoInit},
+    init::{Init, InitPin, InitPinResult, InitResult, IntoInit},
     pin::DropSlot,
+    uninit::Uninit,
 };
 
 /// Provides a fallback initializer if the primary one fails.
@@ -58,12 +58,18 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use placid::{own, Own, init::*};
+/// use placid::prelude::*;
 ///
-/// let owned: Own<u32> = own!(or(value(10u32), value(20u32)));
+/// let owned: Own<u32> = own!(init::or(
+///     init::value(10u32),
+///     init::value(20u32),
+/// ));
 /// assert_eq!(*owned, 10);
 ///
-/// let failed: Own<u32> = own!(or(try_with(|| u32::try_from(-1i32)), 30u32));
+/// let failed: Own<u32> = own!(init::or(
+///     init::try_with(|| u32::try_from(-1i32)),
+///     init::value(30u32),
+/// ));
 /// assert_eq!(*failed, 30);
 /// ```
 pub fn or<T: ?Sized, I1, I2, M2>(init1: I1, init2: I2) -> Or<I1, I2, M2>
@@ -129,12 +135,15 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use placid::{own, Own, init::*};
+/// use placid::prelude::*;
 ///
-/// let owned: Own<u32> = own!(or_else(try_with(|| u32::try_from(-1i32)), |err| {
-///     println!("Initialization failed with error: {}", err);
-///     value(42u32)
-/// }));
+/// let owned: Own<u32> = own!(init::or_else(
+///     init::try_with(|| u32::try_from(-1i32)),
+///     |err| {
+///         println!("Initialization failed with error: {}", err);
+///         init::value(42u32)
+///     },
+/// ));
 /// assert_eq!(*owned, 42);
 /// ```
 pub const fn or_else<T: ?Sized, I1, F, I2>(init1: I1, f: F) -> OrElse<I1, F>
@@ -196,12 +205,18 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use placid::{own, Own, init::*};
+/// use placid::prelude::*;
 ///
-/// let owned: Own<u32> = own!(unwrap_or(value(10u32), value(20u32)));
+/// let owned: Own<u32> = own!(init::unwrap_or(
+///     init::value(10u32),
+///     init::value(20u32),
+/// ));
 /// assert_eq!(*owned, 10);
 ///
-/// let failed: Own<u32> = own!(unwrap_or(try_with(|| u32::try_from(-1i32)), 30u32));
+/// let failed: Own<u32> = own!(init::unwrap_or(
+///     init::try_with(|| u32::try_from(-1i32)),
+///     init::value(30u32),
+/// ));
 /// assert_eq!(*failed, 30);
 /// ```
 pub fn unwrap_or<T: ?Sized, I1, I2, M2>(init1: I1, init2: I2) -> UnwrapOr<I1, I2, M2>
@@ -265,14 +280,14 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use placid::{own, Own, init::*};
+/// use placid::prelude::*;
 ///
-/// let owned: Own<u32> = own!(unwrap_or_else(
-///     try_with(|| u32::try_from(-1i32)),
+/// let owned: Own<u32> = own!(init::unwrap_or_else(
+///     init::try_with(|| u32::try_from(-1i32)),
 ///     |err| {
 ///         println!("Initialization failed with error: {}", err);
-///         value(42u32)
-///     }
+///         init::value(42u32)
+///     },
 /// ));
 /// assert_eq!(*owned, 42);
 /// ```
@@ -287,9 +302,8 @@ where
 
 /// Maps the error type of an initializer using a closure.
 ///
-/// This initializer is created by calling the [`Init::map_err`] or
-/// [`InitPin::map_err`] methods, or by using the [`map_err()`] factory
-/// function.
+/// This initializer is created by calling the [`InitPin::map_err`] methods, or
+/// by using the [`map_err()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct MapErr<I, F> {
     init: I,
@@ -329,11 +343,11 @@ where
 /// # Examples
 ///
 /// ```rust
-/// use placid::{uninit, init::*};
+/// use placid::prelude::*;
 ///
 /// let mut uninit = uninit!(i32);
 /// let res = uninit.try_write(
-///     try_with(|| -> Result<_, &str> { Err("initialization failed") })
+///     init::try_with(|| -> Result<_, &str> { Err("initialization failed") })
 ///         .map_err(|e| format!("Error occurred: {}", e))
 /// );
 /// assert!(res.is_err());

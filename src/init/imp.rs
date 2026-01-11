@@ -4,7 +4,7 @@ use core::{
     mem::{self, ManuallyDrop},
 };
 
-use crate::{Uninit, init::*, pin::DropSlot};
+use crate::{init::*, pin::DropSlot, uninit::Uninit};
 
 #[doc(hidden)]
 pub struct InitCell<'a, T: ?Sized, const C: bool> {
@@ -67,7 +67,7 @@ impl<'a, T: ?Sized> InitCell<'a, T, false> {
 impl<'a, T: ?Sized> InitCell<'a, T, true> {
     #[inline]
     #[doc(hidden)]
-    pub fn build(self) -> crate::Own<'a, Cell<T>> {
+    pub fn build(self) -> Own<'a, Cell<T>> {
         let this = mem::ManuallyDrop::new(self);
         unsafe {
             let uninit = core::ptr::read(&this.uninit);
@@ -154,7 +154,7 @@ impl<'a, 'b, T: ?Sized> InitPinCell<'a, 'b, T, false> {
 impl<'a, 'b, T: ?Sized> InitPinCell<'a, 'b, T, true> {
     #[inline]
     #[doc(hidden)]
-    pub fn build(self) -> crate::POwn<'b, Cell<T>> {
+    pub fn build(self) -> POwn<'b, Cell<T>> {
         let this = mem::ManuallyDrop::new(self);
         unsafe {
             let uninit = core::ptr::read(&this.uninit);
@@ -243,7 +243,7 @@ impl<'a, T: ?Sized> InitUnsafeCell<'a, T, false> {
 impl<'a, T: ?Sized> InitUnsafeCell<'a, T, true> {
     #[inline]
     #[doc(hidden)]
-    pub fn build(self) -> crate::Own<'a, UnsafeCell<T>> {
+    pub fn build(self) -> Own<'a, UnsafeCell<T>> {
         let this = mem::ManuallyDrop::new(self);
         unsafe {
             let uninit = core::ptr::read(&this.uninit);
@@ -330,7 +330,7 @@ impl<'a, 'b, T: ?Sized> InitPinUnsafeCell<'a, 'b, T, false> {
 impl<'a, 'b, T: ?Sized> InitPinUnsafeCell<'a, 'b, T, true> {
     #[inline]
     #[doc(hidden)]
-    pub fn build(self) -> crate::POwn<'b, UnsafeCell<T>> {
+    pub fn build(self) -> POwn<'b, UnsafeCell<T>> {
         let this = mem::ManuallyDrop::new(self);
         unsafe {
             let uninit = core::ptr::read(&this.uninit);
