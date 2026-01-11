@@ -4,7 +4,7 @@ use core::{
 };
 
 use crate::{
-    init::{Init, InitError, InitPin, InitPinResult, InitResult, IntoInit},
+    init::{Init, InitError, InitPin, InitPinResult, InitResult, Initializer, IntoInit},
     owned::Own,
     pin::DropSlot,
     uninit::Uninit,
@@ -89,9 +89,11 @@ impl<T: Copy> SpecInitSlice<T> for &[T] {
 #[derive(Debug, PartialEq)]
 pub struct Slice<'a, T>(&'a [T]);
 
-impl<T: Clone> InitPin<[T]> for Slice<'_, T> {
+impl<T> Initializer for Slice<'_, T> {
     type Error = SliceError;
+}
 
+impl<T: Clone> InitPin<[T]> for Slice<'_, T> {
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, [T]>,
@@ -111,8 +113,6 @@ impl<T: Clone> Init<[T]> for Slice<'_, T> {
 }
 
 impl<T: Clone, const N: usize> InitPin<[T; N]> for Slice<'_, T> {
-    type Error = SliceError;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, [T; N]>,
@@ -192,9 +192,11 @@ impl<'a, T: Clone, const N: usize> IntoInit<[T; N], Slice<'a, T>> for &'a [T] {
 #[derive(Debug, PartialEq)]
 pub struct Str<'a>(&'a str);
 
-impl InitPin<str> for Str<'_> {
+impl Initializer for Str<'_> {
     type Error = SliceError;
+}
 
+impl InitPin<str> for Str<'_> {
     fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, str>,
@@ -263,9 +265,11 @@ impl<'b> IntoInit<str, Str<'b>> for &'b str {
 #[derive(Debug, PartialEq)]
 pub struct Repeat<T>(T);
 
-impl<T: Clone> InitPin<[T]> for Repeat<T> {
+impl<T> Initializer for Repeat<T> {
     type Error = Infallible;
+}
 
+impl<T: Clone> InitPin<[T]> for Repeat<T> {
     fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, [T]>,
@@ -286,8 +290,6 @@ impl<T: Clone> Init<[T]> for Repeat<T> {
 }
 
 impl<T: Clone, const N: usize> InitPin<[T; N]> for Repeat<T> {
-    type Error = Infallible;
-
     fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, [T; N]>,
@@ -333,12 +335,14 @@ pub const fn repeat<T: Clone>(value: T) -> Repeat<T> {
 #[derive(Debug, PartialEq)]
 pub struct RepeatWith<F>(F);
 
+impl<F> Initializer for RepeatWith<F> {
+    type Error = Infallible;
+}
+
 impl<T, F> InitPin<[T]> for RepeatWith<F>
 where
     F: Fn(usize) -> T,
 {
-    type Error = Infallible;
-
     fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, [T]>,
@@ -365,8 +369,6 @@ impl<T, F, const N: usize> InitPin<[T; N]> for RepeatWith<F>
 where
     F: Fn(usize) -> T,
 {
-    type Error = Infallible;
-
     fn init_pin<'a, 'b>(
         self,
         mut place: Uninit<'a, [T; N]>,

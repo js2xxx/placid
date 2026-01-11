@@ -1,7 +1,7 @@
 use core::{convert::Infallible, marker::PhantomData};
 
 use crate::{
-    init::{Init, InitPin, InitPinResult, InitResult},
+    init::{Init, InitPin, InitPinResult, InitResult, Initializer},
     owned::Own,
     pin::{DropSlot, POwn},
     uninit::Uninit,
@@ -16,12 +16,14 @@ type PhantomResult<T, E> = PhantomData<(fn() -> T, fn() -> E)>;
 #[derive(Debug, PartialEq)]
 pub struct TryRawPin<F, T: ?Sized, E>(F, PhantomResult<T, E>);
 
+impl<T: ?Sized, F, E> Initializer for TryRawPin<F, T, E> {
+    type Error = E;
+}
+
 impl<T: ?Sized, F, E> InitPin<T> for TryRawPin<F, T, E>
 where
     F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> InitPinResult<'a, 'b, T, E>,
 {
-    type Error = E;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -53,12 +55,14 @@ where
 #[derive(Debug, PartialEq)]
 pub struct TryRaw<F, T: ?Sized, E>(F, PhantomResult<T, E>);
 
+impl<T: ?Sized, F, E> Initializer for TryRaw<F, T, E> {
+    type Error = E;
+}
+
 impl<T: ?Sized, F, E> InitPin<T> for TryRaw<F, T, E>
 where
     F: FnOnce(Uninit<'_, T>) -> InitResult<'_, T, E>,
 {
-    type Error = E;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -103,12 +107,14 @@ where
 #[derive(Debug, PartialEq)]
 pub struct RawPin<F, T: ?Sized>(F, PhantomData<fn() -> T>);
 
+impl<T: ?Sized, F> Initializer for RawPin<F, T> {
+    type Error = Infallible;
+}
+
 impl<T: ?Sized, F> InitPin<T> for RawPin<F, T>
 where
     F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> POwn<'b, T>,
 {
-    type Error = Infallible;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -139,12 +145,14 @@ where
 #[derive(Debug, PartialEq)]
 pub struct Raw<F, T: ?Sized>(F, PhantomData<fn() -> T>);
 
+impl<T: ?Sized, F> Initializer for Raw<F, T> {
+    type Error = Infallible;
+}
+
 impl<T: ?Sized, F> InitPin<T> for Raw<F, T>
 where
     F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
 {
-    type Error = Infallible;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,

@@ -1,7 +1,9 @@
 use core::convert::Infallible;
 
 use crate::{
-    init::{Init, InitError, InitPin, InitPinError, InitPinResult, InitResult, IntoInit},
+    init::{
+        Init, InitError, InitPin, InitPinError, InitPinResult, InitResult, Initializer, IntoInit,
+    },
     pin::DropSlot,
     uninit::Uninit,
 };
@@ -12,9 +14,11 @@ use crate::{
 #[derive(Debug, PartialEq)]
 pub struct Value<T>(T);
 
-impl<T> InitPin<T> for Value<T> {
+impl<T> Initializer for Value<T> {
     type Error = Infallible;
+}
 
+impl<T> InitPin<T> for Value<T> {
     #[inline]
     fn init_pin<'a, 'b>(
         self,
@@ -85,12 +89,17 @@ impl<T: Clone> IntoInit<T, Value<T>> for T {
 #[derive(Debug, PartialEq)]
 pub struct TryWith<F>(F);
 
-impl<T, E, F> InitPin<T> for TryWith<F>
+impl<T, E, F> Initializer for TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
 {
     type Error = E;
+}
 
+impl<T, E, F> InitPin<T> for TryWith<F>
+where
+    F: FnOnce() -> Result<T, E>,
+{
     #[inline]
     fn init_pin<'a, 'b>(
         self,
@@ -184,12 +193,14 @@ where
 #[derive(Debug, PartialEq)]
 pub struct With<F>(F);
 
+impl<F> Initializer for With<F> {
+    type Error = Infallible;
+}
+
 impl<T, F> InitPin<T> for With<F>
 where
     F: FnOnce() -> T,
 {
-    type Error = Infallible;
-
     #[inline]
     fn init_pin<'a, 'b>(
         self,

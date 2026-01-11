@@ -1,7 +1,7 @@
 use core::{convert::Infallible, marker::PhantomData};
 
 use crate::{
-    init::{Init, InitPin, InitPinResult, InitResult, IntoInit},
+    init::{Init, InitPin, InitPinResult, InitResult, Initializer, IntoInit},
     pin::DropSlot,
     uninit::Uninit,
 };
@@ -17,13 +17,18 @@ pub struct Or<I1, I2, M> {
     marker: PhantomData<M>,
 }
 
+impl<I1, I2, M> Initializer for Or<I1, I2, M>
+where
+    I1: Initializer,
+{
+    type Error = I1::Error;
+}
+
 impl<T: ?Sized, I1, M, I2> InitPin<T> for Or<I1, I2, M>
 where
     I1: InitPin<T>,
     I2: IntoInit<T, M, Error: Into<I1::Error>>,
 {
-    type Error = I1::Error;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -94,13 +99,18 @@ pub struct OrElse<I, F> {
     f: F,
 }
 
+impl<I, F> Initializer for OrElse<I, F>
+where
+    I: Initializer,
+{
+    type Error = I::Error;
+}
+
 impl<T: ?Sized, I1: InitPin<T>, F, I2> InitPin<T> for OrElse<I1, F>
 where
     F: FnOnce(I1::Error) -> I2,
     I2: InitPin<T, Error: Into<I1::Error>>,
 {
-    type Error = I1::Error;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -167,13 +177,15 @@ pub struct UnwrapOr<I1, I2, M> {
     marker: PhantomData<M>,
 }
 
+impl<I1, I2, M> Initializer for UnwrapOr<I1, I2, M> {
+    type Error = Infallible;
+}
+
 impl<T: ?Sized, I1, M, I2> InitPin<T> for UnwrapOr<I1, I2, M>
 where
     I1: InitPin<T>,
     I2: IntoInit<T, M, Error = Infallible>,
 {
-    type Error = Infallible;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -242,13 +254,15 @@ pub struct UnwrapOrElse<I, F> {
     f: F,
 }
 
+impl<I, F> Initializer for UnwrapOrElse<I, F> {
+    type Error = Infallible;
+}
+
 impl<T: ?Sized, I1: InitPin<T>, F, I2> InitPin<T> for UnwrapOrElse<I1, F>
 where
     F: FnOnce(I1::Error) -> I2,
     I2: InitPin<T, Error = Infallible>,
 {
-    type Error = Infallible;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -310,14 +324,20 @@ pub struct MapErr<I, F> {
     f: F,
 }
 
+impl<I, F, E> Initializer for MapErr<I, F>
+where
+    I: Initializer,
+    F: FnOnce(I::Error) -> E,
+{
+    type Error = E;
+}
+
 impl<T, I, F, E> InitPin<T> for MapErr<I, F>
 where
     T: ?Sized,
     I: InitPin<T>,
     F: FnOnce(I::Error) -> E,
 {
-    type Error = E;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -356,10 +376,33 @@ where
 ///     "Error occurred: initialization failed"
 /// );
 /// ```
-pub fn map_err<M, I, F, T: ?Sized, E>(init: I, f: F) -> MapErr<I::Init, F>
+pub const fn map_err<I, F, E>(init: I, f: F) -> MapErr<I, F>
 where
-    I: IntoInit<T, M>,
+    I: Initializer,
     F: FnOnce(I::Error) -> E,
 {
-    MapErr { init: init.into_init(), f }
+    MapErr { init, f }
+}
+
+/// Adapts an infallible initializer to one that can fail with any error type.
+///
+/// Since the original initializer cannot fail, the provided closure will never
+/// be called.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::prelude::*;
+/// use std::num::TryFromIntError;
+///
+/// let owned: Own<u32> = own!(init::adapt_err::<_, TryFromIntError>(
+///     init::value(100u32),
+/// ));
+/// assert_eq!(*owned, 100);
+/// ```
+pub const fn adapt_err<I, E>(init: I) -> MapErr<I, impl FnOnce(Infallible) -> E>
+where
+    I: Initializer<Error = Infallible>,
+{
+    map_err(init, |e| match e {})
 }

@@ -13,6 +13,66 @@ use crate::{
     uninit::Uninit,
 };
 
+/// A marker trait for initializers.
+///
+/// This trait itself does not provide any methods, but serves as a common
+/// supertrait for all initializer traits. It allows for generic programming
+/// over different kinds of initializers.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not an initializer",
+    label = "`{Self}` is not an initializer"
+)]
+pub trait Initializer: Sized {
+    /// The error type that can occur during initialization.
+    type Error;
+
+    /// Maps the error type of the initializer using a closure.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let mut uninit = uninit!(i32);
+    /// let res = uninit.try_write(
+    ///     init::try_with(|| -> Result<_, &str> { Err("initialization failed") })
+    ///         .map_err(|e| format!("Error occurred: {}", e))
+    /// );
+    /// assert!(res.is_err());
+    /// assert_eq!(
+    ///     res.err().unwrap().error,
+    ///     "Error occurred: initialization failed"
+    /// );
+    /// ```
+    fn map_err<F, E2>(self, f: F) -> MapErr<Self, F>
+    where
+        F: FnOnce(Self::Error) -> E2,
+    {
+        map_err(self, f)
+    }
+
+    /// Adapts an infallible initializer to have a different error type.
+    ///
+    /// Since the initializer cannot fail, the provided closure will never be
+    /// called.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    /// use std::num::TryFromIntError;
+    ///
+    /// let owned: Own<u32> = own!(init::value(100u32).adapt_err::<TryFromIntError>());
+    /// assert_eq!(*owned, 100);
+    /// ```
+    fn adapt_err<E2>(self) -> MapErr<Self, impl FnOnce(Self::Error) -> E2>
+    where
+        Self: Initializer<Error = Infallible>,
+    {
+        adapt_err(self)
+    }
+}
+
 /// An error that occurs during initialization of a place.
 #[derive(thiserror::Error)]
 #[error("failed to initialize in pinned place: {error}")]
@@ -97,10 +157,7 @@ pub type InitPinResult<'a, 'b, T, E> = Result<POwn<'b, T>, InitPinError<'a, 'b, 
     message = "`{Self}` is not a pin-initializer for places of type `{T}`",
     label = "`{Self}` is not a pin-initializer for type `{T}`"
 )]
-pub trait InitPin<T: ?Sized>: Sized {
-    /// The error type that can occur during initialization.
-    type Error;
-
+pub trait InitPin<T: ?Sized>: Initializer {
     /// Initializes a place with a pinned value.
     ///
     /// This method performs the actual initialization of an uninitialized
@@ -243,31 +300,6 @@ pub trait InitPin<T: ?Sized>: Sized {
         I2: InitPin<T, Error = Infallible>,
     {
         unwrap_or_else(self, f)
-    }
-
-    /// Maps the error type of the initializer using a closure.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use placid::prelude::*;
-    ///
-    /// let mut uninit = uninit!(i32);
-    /// let res = uninit.try_write(
-    ///     init::try_with(|| -> Result<_, &str> { Err("initialization failed") })
-    ///         .map_err(|e| format!("Error occurred: {}", e))
-    /// );
-    /// assert!(res.is_err());
-    /// assert_eq!(
-    ///     res.err().unwrap().error,
-    ///     "Error occurred: initialization failed"
-    /// );
-    /// ```
-    fn map_err<F, E2>(self, f: F) -> MapErr<Self, F>
-    where
-        F: FnOnce(Self::Error) -> E2,
-    {
-        map_err::<(), _, _, _, _>(self, f)
     }
 }
 
@@ -419,7 +451,8 @@ pub use self::and::{And, AndPin, and, and_pin};
 
 mod or;
 pub use self::or::{
-    MapErr, Or, OrElse, UnwrapOr, UnwrapOrElse, map_err, or, or_else, unwrap_or, unwrap_or_else,
+    MapErr, Or, OrElse, UnwrapOr, UnwrapOrElse, adapt_err, map_err, or, or_else, unwrap_or,
+    unwrap_or_else,
 };
 
 mod raw;

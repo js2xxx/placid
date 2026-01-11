@@ -9,7 +9,17 @@ use crate::{
 };
 
 /// A place in memory that can be created with specified arguments.
-pub trait PlaceConstruct<Args>: Sized + Deref {
+///
+/// This trait is rarely used directly. Instead, use one of the more specific
+/// place construction traits such as [`PlaceNew`], [`PlaceNewIn`],
+/// or [`PlaceSlice`]. See the trait list in the module documentation for more
+/// details.
+///
+/// # Arguments
+///
+/// `Args` is a bunch of arguments required to create the place itself,
+/// unrelated to initialization of the place's content. Defaults to `()`.
+pub trait PlaceConstruct<Args = ()>: Sized + Deref {
     /// The uninitialized place type that can be constructed into `Self`.
     type Uninit: Place<Self::Target, Init = Self>;
     /// The error type that can occur during construction.
@@ -134,32 +144,162 @@ place_construct! {
     /// A place that can be constructed by default methods.
     pub trait PlaceNew = {
         funcs: [
-            /// Creates a new place by initializing it with the given initializer.
+            /// Tries to create a new place by initializing it with the
+            /// given initializer.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::AllocError;
+            ///
+            /// let init = init::with(|| 42).adapt_err::<AllocError>();
+            /// let b = Box::try_new_with(init).unwrap();
+            /// assert_eq!(*b, 42);
+            /// ```
             try_new_with,
-            /// Creates a new place by initializing it with the given initializer.
-            new_with,
-            /// Creates a new pinned place by initializing it with the given
+            /// Creates a new place by initializing it with the given
             /// initializer.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// use placid::prelude::*;
+            /// let b = Box::new_with(init::with(|| 42));
+            /// assert_eq!(*b, 42);
+            /// ```
+            new_with,
+            /// Tries to create a new pinned place by initializing it with
+            /// the given initializer.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::AllocError;
+            ///
+            /// let init = init::with(|| 42).adapt_err::<AllocError>();
+            /// let b = Box::try_pin_with(init).unwrap();
+            /// assert_eq!(*b, 42);
+            /// ```
             try_pin_with,
             /// Creates a new pinned place by initializing it with the given
             /// initializer.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// use placid::prelude::*;
+            /// let b = Box::pin_with(init::with(|| 42));
+            /// assert_eq!(*b, 42);
+            /// ```
             pin_with,
         ]
     };
 
-    /// A place that can be constructed with a specified allocator.
-    pub trait PlaceNewIn[A] where [A: Allocator] = {
-        args: { alloc: A },
+    /// A place that can be constructed with a specified argument.
+    pub trait PlaceNewIn[A] where [A:] = {
+        args: { arg: A },
         funcs: [
-            /// Creates a new place by initializing it with the given initializer.
+            /// Tries to create a new place by initializing it with the
+            /// given initializer and argument.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::{AllocError, Global};
+            ///
+            /// let init = init::with(|| 42).adapt_err::<AllocError>();
+            /// let b = Box::try_new_within(Global, init).unwrap();
+            /// assert_eq!(*b, 42);
+            /// ```
             try_new_within,
-            /// Creates a new place by initializing it with the given initializer.
+            /// Creates a new place by initializing it with the given
+            /// initializer and argument.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::Global;
+            ///
+            /// let b = Box::new_within(Global, init::with(|| 42));
+            /// assert_eq!(*b, 42);
+            /// ```
             new_within,
-            /// Creates a new pinned place by initializing it with the given
-            /// initializer.
+            /// Tries to create a new pinned place by initializing it with the
+            /// given initializer and argument.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::{AllocError, Global};
+            ///
+            /// let init = init::with(|| 42).adapt_err::<AllocError>();
+            /// let b = Box::try_pin_within(Global, init).unwrap();
+            /// assert_eq!(*b, 42);
+            /// ```
             try_pin_within,
             /// Creates a new pinned place by initializing it with the given
-            /// initializer.
+            /// initializer and argument.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::Global;
+            ///
+            /// let b = Box::pin_within(Global, init::with(|| 42));
+            /// assert_eq!(*b, 42);
+            /// ```
             pin_within,
         ]
     };
@@ -173,15 +313,77 @@ place_construct! {
         },
         target: [Self::Item] as [Item],
         funcs: [
-            /// Creates a new slice place by initializing it with the given initializer.
+            /// Tries to create a new slice place by initializing it with the
+            /// given initializer.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::AllocError;
+            ///
+            /// let init = init::repeat(42).adapt_err::<AllocError>();
+            /// let slice = Box::try_new_slice(3, init).unwrap();
+            /// assert_eq!(&*slice, &[42, 42, 42]);
+            /// ```
             try_new_slice,
-            /// Creates a new slice place by initializing it with the given initializer.
+            /// Creates a new slice place by initializing it with the given
+            /// initializer.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// use placid::prelude::*;
+            /// let slice = Box::new_slice(3, init::repeat(42));
+            /// assert_eq!(&*slice, &[42, 42, 42]);
+            /// ```
             new_slice,
-            /// Creates a new pinned slice place by initializing it with the given
-            /// initializer.
+            /// Tries to create a new pinned slice place by initializing it with
+            /// the given initializer.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::AllocError;
+            ///
+            /// let init = init::repeat(42).adapt_err::<AllocError>();
+            /// let slice = Box::try_pin_slice(3, init).unwrap();
+            /// assert_eq!(&*slice, &[42, 42, 42]);
+            /// ```
             try_pin_slice,
-            /// Creates a new pinned slice place by initializing it with the given
-            /// initializer.
+            /// Creates a new pinned slice place by initializing it with the
+            /// given initializer.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// use placid::prelude::*;
+            /// let slice = Box::pin_slice(3, init::repeat(42));
+            /// assert_eq!(&*slice, &[42, 42, 42]);
+            /// ```
             pin_slice,
         ]
     };
@@ -196,15 +398,85 @@ place_construct! {
         },
         target: [Self::Item] as [Item],
         funcs: [
-            /// Creates a new slice place by initializing it with the given initializer.
+            /// Tries to create a new slice place by initializing it with the
+            /// given initializer and allocator.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::AllocError;
+            ///
+            /// let a = std::alloc::Global;
+            /// let init = init::repeat(42).adapt_err::<AllocError>();
+            /// let slice = Box::try_new_slice_in(3, a, init).unwrap();
+            /// assert_eq!(&*slice, &[42, 42, 42]);
+            /// ```
             try_new_slice_in,
-            /// Creates a new slice place by initializing it with the given initializer.
+            /// Creates a new slice place by initializing it with the given
+            /// initializer and allocator.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            ///
+            /// let a = std::alloc::Global;
+            /// let slice = Box::new_slice_in(3, a, init::repeat(42));
+            /// assert_eq!(&*slice, &[42, 42, 42]);
+            /// ```
             new_slice_in,
-            /// Creates a new pinned slice place by initializing it with the given
-            /// initializer.
+            /// Tries to create a new pinned slice place by initializing it with
+            /// the given initializer and allocator.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::AllocError;
+            ///
+            /// let a = std::alloc::Global;
+            /// let init = init::repeat(42).adapt_err::<AllocError>();
+            /// let slice = Box::try_pin_slice_in(3, a, init).unwrap();
+            /// assert_eq!(&*slice, &[42, 42, 42]);
+            /// ```
             try_pin_slice_in,
-            /// Creates a new pinned slice place by initializing it with the given
-            /// initializer.
+            /// Creates a new pinned slice place by initializing it with the
+            /// given initializer and allocator.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            ///
+            /// let a = std::alloc::Global;
+            /// let slice = Box::pin_slice_in(3, a, init::repeat(42));
+            /// assert_eq!(&*slice, &[42, 42, 42]);
+            /// ```
             pin_slice_in,
         ]
     };
@@ -214,15 +486,77 @@ place_construct! {
         args: { len: usize },
         target: str as str,
         funcs: [
-            /// Creates a new string place by initializing it with the given initializer.
+            /// Tries to create a new string place by initializing it with the
+            /// given initializer.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::AllocError;
+            ///
+            /// let init = init::str("hello").map_err(|_| AllocError);
+            /// let s = Box::try_new_str(5, init).unwrap();
+            /// assert_eq!(&*s, "hello");
+            /// ```
             try_new_str,
-            /// Creates a new string place by initializing it with the given initializer.
+            /// Creates a new string place by initializing it with the given
+            /// initializer.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// use placid::prelude::*;
+            /// let s = Box::new_str(5, "hello");
+            /// assert_eq!(&*s, "hello");
+            /// ```
             new_str,
-            /// Creates a new pinned string place by initializing it with the given
-            /// initializer.
+            /// Tries to create a new pinned string place by initializing it with
+            /// the given initializer.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::AllocError;
+            ///
+            /// let init = init::str("hello").map_err(|_| AllocError);
+            /// let s = Box::try_pin_str(5, init).unwrap();
+            /// assert_eq!(&*s, "hello");
+            /// ```
             try_pin_str,
-            /// Creates a new pinned string place by initializing it with the given
-            /// initializer.
+            /// Creates a new pinned string place by initializing it with the
+            /// given initializer.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// use placid::prelude::*;
+            /// let s = Box::pin_str(5, "hello");
+            /// assert_eq!(&*s, "hello");
+            /// ```
             pin_str,
         ]
     };
@@ -233,15 +567,85 @@ place_construct! {
         args: { len: usize, alloc: A },
         target: str as str,
         funcs: [
-            /// Creates a new string place by initializing it with the given initializer.
+            /// Tries to create a new string place by initializing it with the
+            /// given initializer and allocator.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::AllocError;
+            ///
+            /// let a = std::alloc::Global;
+            /// let init = init::str("hello").map_err(|_| AllocError);
+            /// let s = Box::try_new_str_in(5, a, init).unwrap();
+            /// assert_eq!(&*s, "hello");
+            /// ```
             try_new_str_in,
-            /// Creates a new string place by initializing it with the given initializer.
+            /// Creates a new string place by initializing it with the given
+            /// initializer and allocator.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            ///
+            /// let a = std::alloc::Global;
+            /// let s = Box::new_str_in(5, a, "hello");
+            /// assert_eq!(&*s, "hello");
+            /// ```
             new_str_in,
-            /// Creates a new pinned string place by initializing it with the given
-            /// initializer.
+            /// Tries to create a new pinned string place by initializing it with
+            /// the given initializer and allocator.
+            ///
+            /// # Errors
+            ///
+            /// If place creation or the initialization fails, this method
+            /// returns an error.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            /// use std::alloc::AllocError;
+            ///
+            /// let a = std::alloc::Global;
+            /// let init = init::str("hello").map_err(|_| AllocError);
+            /// let s = Box::try_pin_str_in(5, a, init).unwrap();
+            /// assert_eq!(&*s, "hello");
+            /// ```
             try_pin_str_in,
-            /// Creates a new pinned string place by initializing it with the given
-            /// initializer.
+            /// Creates a new pinned string place by initializing it with the
+            /// given initializer and allocator.
+            ///
+            /// # Panics
+            ///
+            /// This method will panic if place creation or the initialization
+            /// fails.
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// #![feature(allocator_api)]
+            /// use placid::prelude::*;
+            ///
+            /// let a = std::alloc::Global;
+            /// let s = Box::pin_str_in(5, a, "hello");
+            /// assert_eq!(&*s, "hello");
+            /// ```
             pin_str_in,
         ]
     };

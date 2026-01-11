@@ -1,7 +1,7 @@
 use core::pin::Pin;
 
 use crate::{
-    init::{Init, InitPin, InitPinResult, InitResult, IntoInit},
+    init::{Init, InitPin, InitPinResult, InitResult, Initializer, IntoInit},
     owned::Own,
     pin::DropSlot,
     uninit::Uninit,
@@ -19,14 +19,19 @@ pub struct And<I, F> {
     f: F,
 }
 
+impl<I, F> Initializer for And<I, F>
+where
+    I: Initializer,
+{
+    type Error = I::Error;
+}
+
 impl<T, I, F> InitPin<T> for And<I, F>
 where
     T: ?Sized,
     I: Init<T>,
     F: FnOnce(&mut T),
 {
-    type Error = I::Error;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
@@ -84,14 +89,19 @@ pub struct AndPin<I, F> {
     f: F,
 }
 
+impl<I, F> Initializer for AndPin<I, F>
+where
+    I: Initializer,
+{
+    type Error = I::Error;
+}
+
 impl<T, I, F> InitPin<T> for AndPin<I, F>
 where
     T: ?Sized,
     I: InitPin<T>,
     F: FnOnce(Pin<&mut T>),
 {
-    type Error = I::Error;
-
     fn init_pin<'a, 'b>(
         self,
         place: Uninit<'a, T>,
