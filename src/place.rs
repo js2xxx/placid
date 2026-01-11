@@ -15,6 +15,7 @@ use core::{
     ptr::{self, NonNull},
 };
 
+use self::construct::PlaceConstruct;
 use crate::{
     init::{Init, IntoInit},
     owned::Own,
@@ -282,6 +283,8 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     }
 }
 
+pub mod construct;
+
 unsafe impl<T> Place<T> for MaybeUninit<T> {
     type Init = T;
 
@@ -340,19 +343,10 @@ where
 
 #[cfg(feature = "alloc")]
 macro_rules! std_alloc_places {
-    (@get_mut $this:ident, $ty:ident) => {
-        $ty::get_mut($this).unwrap()
+    ($($ty:ident: [$($mut:ident)?; $($try_slice:ident)?]),* $(,)?) => {
+        $(std_alloc_places!(@IMP $ty: [$($mut)?; $($try_slice)?]);)*
     };
-    (@get_mut $this:ident, mut $ty:ident) => {
-        **$this
-    };
-    (@from_raw_parts ($($t:tt)*)) => {
-        ptr::from_raw_parts($($t)*)
-    };
-    (@from_raw_parts mut ($($t:tt)*)) => {
-        ptr::from_raw_parts_mut($($t)*)
-    };
-    (@IMP $ty:ident $($mut:ident)?) => {
+    (@IMP $ty:ident: [$($mut:ident)?; $($try_slice:ident)?]) => {
         unsafe impl<T, A: Allocator> Place<T> for $ty<MaybeUninit<T>, A> {
             type Init = $ty<T, A>;
 
@@ -367,6 +361,24 @@ macro_rules! std_alloc_places {
             fn from_init(init: Self::Init) -> Self {
                 let (raw, alloc) = $ty::into_raw_with_allocator(init);
                 unsafe { $ty::from_raw_in(raw.cast::<MaybeUninit<T>>(), alloc) }
+            }
+        }
+
+        impl<T> PlaceConstruct<()> for $ty<T> {
+            type Uninit = $ty<MaybeUninit<T>>;
+            type Error = alloc::alloc::AllocError;
+
+            fn try_new_uninit_in(_: ()) -> Result<Self::Uninit, Self::Error> {
+                $ty::try_new_uninit()
+            }
+        }
+
+        impl<T, A: Allocator> PlaceConstruct<A> for $ty<T, A> {
+            type Uninit = $ty<MaybeUninit<T>, A>;
+            type Error = alloc::alloc::AllocError;
+
+            fn try_new_uninit_in(alloc: A) -> Result<Self::Uninit, Self::Error> {
+                $ty::try_new_uninit_in(alloc)
             }
         }
 
@@ -424,17 +436,102 @@ macro_rules! std_alloc_places {
                 unsafe { $ty::from_raw_in(ptr, alloc) }
             }
         }
+
+        std_alloc_places!(@TRY_SLICE $($try_slice)? $ty);
     };
-    ($($ty:ident $($mut:ident)?),* $(,)?) => {
-        $(std_alloc_places!(@IMP $ty $($mut)?);)*
+    (@get_mut $this:ident, $ty:ident) => {
+        $ty::get_mut($this).unwrap()
     };
+    (@get_mut $this:ident, mut $ty:ident) => {
+        **$this
+    };
+    (@from_raw_parts ($($t:tt)*)) => {
+        ptr::from_raw_parts($($t)*)
+    };
+    (@from_raw_parts mut ($($t:tt)*)) => {
+        ptr::from_raw_parts_mut($($t)*)
+    };
+    (@TRY_SLICE try_slice $ty:ident) => {
+        impl<T> PlaceConstruct<usize> for $ty<[T]> {
+            type Uninit = $ty<[MaybeUninit<T>]>;
+            type Error = alloc::alloc::AllocError;
+
+            fn try_new_uninit_in(len: usize) -> Result<Self::Uninit, Self::Error> {
+                $ty::try_new_uninit_slice(len)
+            }
+        }
+
+        impl<T, A: Allocator> PlaceConstruct<(usize, A)> for $ty<[T], A> {
+            type Uninit = $ty<[MaybeUninit<T>], A>;
+            type Error = alloc::alloc::AllocError;
+
+            fn try_new_uninit_in((len, alloc): (usize, A)) -> Result<Self::Uninit, Self::Error> {
+                $ty::try_new_uninit_slice_in(len, alloc)
+            }
+        }
+
+        impl PlaceConstruct<usize> for $ty<str> {
+            type Uninit = $ty<[MaybeUninit<u8>]>;
+            type Error = alloc::alloc::AllocError;
+
+            fn try_new_uninit_in(len: usize) -> Result<Self::Uninit, Self::Error> {
+                $ty::try_new_uninit_slice(len)
+            }
+        }
+
+        impl<A: Allocator> PlaceConstruct<(usize, A)> for $ty<str, A> {
+            type Uninit = $ty<[MaybeUninit<u8>], A>;
+            type Error = alloc::alloc::AllocError;
+
+            fn try_new_uninit_in((len, alloc): (usize, A)) -> Result<Self::Uninit, Self::Error> {
+                $ty::try_new_uninit_slice_in(len, alloc)
+            }
+        }
+    };
+    (@TRY_SLICE $ty:ident) => {
+        impl<T> PlaceConstruct<usize> for $ty<[T]> {
+            type Uninit = $ty<[MaybeUninit<T>]>;
+            type Error = alloc::alloc::AllocError;
+
+            fn try_new_uninit_in(len: usize) -> Result<Self::Uninit, Self::Error> {
+                Ok($ty::new_uninit_slice(len))
+            }
+        }
+
+        impl<T, A: Allocator> PlaceConstruct<(usize, A)> for $ty<[T], A> {
+            type Uninit = $ty<[MaybeUninit<T>], A>;
+            type Error = alloc::alloc::AllocError;
+
+            fn try_new_uninit_in((len, alloc): (usize, A)) -> Result<Self::Uninit, Self::Error> {
+                Ok($ty::new_uninit_slice_in(len, alloc))
+            }
+        }
+
+        impl PlaceConstruct<usize> for $ty<str> {
+            type Uninit = $ty<[MaybeUninit<u8>]>;
+            type Error = alloc::alloc::AllocError;
+
+            fn try_new_uninit_in(len: usize) -> Result<Self::Uninit, Self::Error> {
+                Ok($ty::new_uninit_slice(len))
+            }
+        }
+
+        impl<A: Allocator> PlaceConstruct<(usize, A)> for $ty<str, A> {
+            type Uninit = $ty<[MaybeUninit<u8>], A>;
+            type Error = alloc::alloc::AllocError;
+
+            fn try_new_uninit_in((len, alloc): (usize, A)) -> Result<Self::Uninit, Self::Error> {
+                Ok($ty::new_uninit_slice_in(len, alloc))
+            }
+        }
+    }
 }
 
 #[cfg(feature = "alloc")]
 std_alloc_places! {
-    Box mut,
-    Rc,
-    Arc,
+    Box: [mut; ],
+    Rc: [;],
+    Arc: [;],
 }
 
 /// A place state marker for owned places.
@@ -518,11 +615,11 @@ unsafe impl<'a, #[may_dangle] T: ?Sized, S: PlaceState> Drop for PlaceRef<'a, T,
 #[cfg(feature = "alloc")]
 mod tests {
     use super::*;
-    use crate::init;
+    use crate::{init, place::construct::PlaceStr};
 
     #[test]
     fn places() {
-        let b = Box::new_uninit_slice(5).init(init::str("hello"));
+        let b = Box::new_str(5, init::str("hello"));
         assert_eq!(&*b, "hello");
 
         let (e, _) = Box::new_uninit_slice(7)
