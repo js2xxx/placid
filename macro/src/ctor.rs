@@ -231,7 +231,7 @@ pub fn init_pin(mut input: Expr) -> syn::Result<TokenStream> {
     };
     visitor.visit_root_expr_mut(&mut input, false);
     match visitor.err {
-        None => Ok(quote!(#input)),
+        None => Ok(quote!(::placid::__opaque_init_pin(#input))),
         Some(err) => Err(err),
     }
 }
@@ -243,7 +243,7 @@ pub fn init(mut input: Expr) -> syn::Result<TokenStream> {
     };
     visitor.visit_root_expr_mut(&mut input, false);
     match visitor.err {
-        None => Ok(quote!(#input)),
+        None => Ok(quote!(::placid::__opaque_init(#input))),
         Some(err) => Err(err),
     }
 }

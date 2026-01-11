@@ -478,6 +478,22 @@ pub use placid_macro::init;
 /// [structurally pin-initialized]: macro@crate::InitPin
 pub use placid_macro::init_pin;
 
+#[doc(hidden)]
+pub const fn __opaque_init<T: ?Sized, E, I>(init: I) -> impl Init<T, Error = E>
+where
+    I: Init<T, Error = E>,
+{
+    init
+}
+
+#[doc(hidden)]
+pub const fn __opaque_init_pin<T: ?Sized, E, I>(init: I) -> impl InitPin<T, Error = E>
+where
+    I: InitPin<T, Error = E>,
+{
+    init
+}
+
 #[cfg(not(doc))]
 #[doc = include_str!("../README.md")]
 mod _readme {}
