@@ -7,6 +7,7 @@ edition.workspace = true
 keywords.workspace = true
 license.workspace = true
 name = "placid-macro"
+readme = "README.md"
 repository.workspace = true
 version.workspace = true
 

@@ -1,5 +1,9 @@
 # `placid` - Separated ownership and in-place construction
 
+[![Cargo](https://img.shields.io/crates/v/placid?style=for-the-badge)](https://crates.io/crates/placid)
+[![Documentation](https://img.shields.io/docsrs/placid?style=for-the-badge)](https://docs.rs/placid)
+[![License](https://img.shields.io/crates/l/placid?style=for-the-badge)](https://github.com/js2xxx/placid?tab=readme-ov-file#license)
+
 `placid` extends Rust's ownership model with owned and uninit references with pinning variants (semantically `&own T`, `&uninit T`, and `&pin own T` or `Pin<&own T>`). It also provides macros, traits, and functions for constructing and manipulating these types, achieving safe in-place construction.
 
 ## The problem
