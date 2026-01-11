@@ -428,9 +428,8 @@ impl<'a, T: ?Sized> fmt::Pointer for POwn<'a, T> {
 impl<'a, T: Clone> POwn<'a, T> {
     /// Clones the value inside the pinned owned reference into another place.
     ///
-    /// This method creates a new pinned owned reference by cloning the value
-    /// from the current pinned reference into the specified place. The new
-    /// value is properly pinned in the target location.
+    /// This method creates a new owned reference by cloning the value from the
+    /// current pinned reference into the specified place.
     ///
     /// # Examples
     ///
@@ -439,17 +438,12 @@ impl<'a, T: Clone> POwn<'a, T> {
     ///
     /// let pinned = placid::pown!(String::from("hello"));
     /// let mut place = core::mem::MaybeUninit::uninit();
-    /// let drop_slot = placid::drop_slot!();
-    /// let cloned: POwn<String> = pinned.clone(&mut place, drop_slot);
+    /// let cloned: Own<String> = pinned.clone(&mut place);
     /// assert_eq!(&*cloned, "hello");
     /// ```
     #[inline]
-    pub fn clone<'p, 'b>(
-        &self,
-        to: &'p mut impl Place<T>,
-        slot: DropSlot<'p, 'b, T>,
-    ) -> POwn<'b, T> {
-        to.write_pin(|| (**self).clone(), slot)
+    pub fn clone<'p>(&self, to: &'p mut impl Place<T>) -> Own<'p, T> {
+        to.write(|| (**self).clone())
     }
 }
 
