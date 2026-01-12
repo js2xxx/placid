@@ -1,0 +1,488 @@
+use core::{
+    mem::{self, ManuallyDrop, MaybeUninit},
+    pin::Pin,
+};
+
+use crate::{
+    init::{Init, InitPin, IntoInit, IntoInitPin},
+    pin::{DropSlot, DroppingSlot},
+    place::Place,
+    uninit::Uninit,
+};
+
+/// A place slot in memory whose initialization state is tracked at runtime.
+///
+/// This is similar to [`Option<T>`], but necessary for fallable in-place
+/// initialization patterns where `T` does not implement `Default` or `Clone`.
+/// For failed initializations , the old value is dropped and the place becomes
+/// uninitialized.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::{prelude::*, place::DynPlace};
+///
+/// let mut place: DynPlace<String> = DynPlace::new();
+/// assert!(!place.is_init());
+///
+/// let s = place.insert("Hello".to_string());
+/// s.push_str(", world!");
+/// assert!(place.is_init());
+/// assert_eq!(place.as_deref(), Some("Hello, world!"));
+///
+/// let s = place.take().unwrap();
+/// assert_eq!(s, "Hello, world!");
+/// assert!(!place.is_init());
+/// ```
+#[derive(Debug)]
+pub struct DynPlace<T> {
+    init: bool,
+    data: MaybeUninit<T>,
+}
+
+impl<T> Default for DynPlace<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> DynPlace<T> {
+    /// Creates a new uninitialized dynamic place.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            init: false,
+            data: MaybeUninit::uninit(),
+        }
+    }
+
+    /// Returns `true` if the place is initialized.
+    #[inline]
+    pub const fn is_init(&self) -> bool {
+        self.init
+    }
+
+    /// Returns a reference to the value if initialized, or `None` otherwise.
+    ///
+    /// This is similar to [`Option::as_ref`].
+    #[inline]
+    pub const fn as_ref(&self) -> Option<&T> {
+        if self.init {
+            // SAFETY: We checked that the value is initialized.
+            Some(unsafe { self.data.assume_init_ref() })
+        } else {
+            None
+        }
+    }
+
+    /// Returns a mutable reference to the value if initialized, or `None`
+    /// otherwise.
+    ///
+    /// This is similar to [`Option::as_mut`].
+    #[inline]
+    pub const fn as_mut(&mut self) -> Option<&mut T> {
+        if self.init {
+            // SAFETY: We checked that the value is initialized.
+            Some(unsafe { self.data.assume_init_mut() })
+        } else {
+            None
+        }
+    }
+
+    /// Returns a pinned reference to the value if initialized, or `None`
+    /// otherwise.
+    ///
+    /// This is similar to [`Option::as_pin_ref`].
+    #[inline]
+    pub const fn as_pin_ref(self: Pin<&Self>) -> Option<Pin<&T>> {
+        unsafe {
+            // SAFETY: We don't move `data`.
+            let this = self.get_ref();
+            if this.init {
+                // SAFETY: We checked that the value is initialized.
+                Some(Pin::new_unchecked(this.data.assume_init_ref()))
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Returns a pinned mutable reference to the value if initialized, or
+    /// `None` otherwise.
+    ///
+    /// This is similar to [`Option::as_pin_mut`].
+    #[inline]
+    pub const fn as_pin_mut(self: Pin<&mut Self>) -> Option<Pin<&mut T>> {
+        unsafe {
+            // SAFETY: We don't move `data`.
+            let this = self.get_unchecked_mut();
+            if this.init {
+                // SAFETY: We checked that the value is initialized.
+                Some(Pin::new_unchecked(this.data.assume_init_mut()))
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Returns a reference to the dereferenced value if initialized, or
+    /// `None` otherwise.
+    ///
+    /// This is similar to [`Option::as_deref`].
+    #[inline]
+    pub fn as_deref(&self) -> Option<&T::Target>
+    where
+        T: core::ops::Deref,
+    {
+        self.as_ref().map(|r| r.deref())
+    }
+
+    /// Returns a mutable reference to the dereferenced value if initialized,
+    /// or `None` otherwise.
+    ///
+    /// This is similar to [`Option::as_deref_mut`].
+    #[inline]
+    pub fn as_deref_mut(&mut self) -> Option<&mut T::Target>
+    where
+        T: core::ops::DerefMut,
+    {
+        self.as_mut().map(|r| r.deref_mut())
+    }
+
+    /// Returns a cloned value if initialized, or `None` otherwise.
+    ///
+    /// This is similar to [`Option::cloned`].
+    #[inline]
+    pub fn cloned(&self) -> Option<T>
+    where
+        T: Clone,
+    {
+        self.as_ref().cloned()
+    }
+
+    /// Returns a copied value if initialized, or `None` otherwise.
+    ///
+    /// This is similar to [`Option::copied`].
+    #[inline]
+    pub fn copied(&self) -> Option<T>
+    where
+        T: Copy,
+    {
+        self.as_ref().copied()
+    }
+
+    /// Takes the value out of the place if initialized, leaving it
+    /// uninitialized, and returns it. Returns `None` if the place is
+    /// uninitialized.
+    ///
+    /// This is similar to [`Option::take`].
+    #[inline]
+    pub const fn take(&mut self) -> Option<T> {
+        if self.init {
+            // SAFETY: We checked that the value is initialized.
+            let value = unsafe { self.data.assume_init_read() };
+            self.init = false;
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> DynPlace<T> {
+    /// Drops the value in place if initialized, leaving the place
+    /// uninitialized.
+    ///
+    /// This is a convenience method of `place = DynPlace::new()` for any
+    /// `place: DynPlace<T>`.
+    pub fn drop_in_place(&mut self) {
+        if self.init {
+            // SAFETY: We checked that the value is initialized.
+            unsafe { self.data.assume_init_drop() };
+            self.init = false;
+        }
+    }
+
+    /// Drops the value in place if initialized, leaving the place
+    /// uninitialized.
+    ///
+    /// This is a convenience method of `place.set(DynPlace::new())` for any
+    /// `place: Pin<&mut DynPlace<T>>`.
+    pub fn drop_in_place_pin(self: Pin<&mut Self>) {
+        // SAFETY: We don't move `data`.
+        unsafe { self.get_unchecked_mut().drop_in_place() }
+    }
+
+    /// Initializes the place with the given initializer, returning a mutable
+    /// reference to the value.
+    ///
+    /// This is similar to [`Option::insert`], but will drop any existing value
+    /// in the place regardless of any panic during initialization.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{prelude::*, place::DynPlace};
+    ///
+    /// let mut place: DynPlace<String> = DynPlace::new();
+    /// let s = place.insert("Hello".to_string());
+    /// s.push_str(", world!");
+    /// assert_eq!(place.as_deref(), Some("Hello, world!"));
+    /// ```
+    pub fn insert<I, M>(&mut self, init: I) -> &mut T
+    where
+        I: IntoInit<T, M>,
+    {
+        self.try_insert(init).unwrap()
+    }
+
+    /// Tries to initialize the place with the given initializer, returning a
+    /// mutable reference to the value.
+    ///
+    /// This is similar to [`Option::insert`], but will drop any existing value
+    /// in the place, regardless of any error during initialization.
+    ///
+    /// # Errors
+    ///
+    /// This will return an error if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{prelude::*, place::DynPlace};
+    ///
+    /// let mut place: DynPlace<String> = DynPlace::new();
+    /// match place.try_insert("Hello".to_string()) {
+    ///     Ok(s) => {
+    ///         s.push_str(", world!");
+    ///         assert_eq!(place.as_deref(), Some("Hello, world!"));
+    ///     }
+    ///     Err(_) => panic!("Initialization failed"),
+    /// }
+    /// ```
+    pub fn try_insert<I, M>(&mut self, init: I) -> Result<&mut T, I::Error>
+    where
+        I: IntoInit<T, M>,
+    {
+        self.drop_in_place();
+
+        unsafe {
+            let uninit = Uninit::from_raw(self.data.as_mut_ptr());
+            match init.into_init().init(uninit) {
+                Ok(p) => {
+                    mem::forget(p);
+                    self.init = true;
+                    // SAFETY: We just initialized the value.
+                    Ok(self.data.assume_init_mut())
+                }
+                Err(e) => Err(e.error),
+            }
+        }
+    }
+
+    /// Initializes the place with the given initializer if uninitialized,
+    /// returning a mutable reference to the value.
+    ///
+    /// See also [`DynPlace::insert`], which updates the value regardless of the
+    /// initialization state.
+    ///
+    /// This is similar to [`Option::get_or_insert`].
+    pub fn get_or_insert<I, M>(&mut self, init: I) -> &mut T
+    where
+        I: IntoInit<T, M>,
+    {
+        if self.is_init() {
+            // SAFETY: We checked that the value is initialized.
+            unsafe { self.data.assume_init_mut() }
+        } else {
+            self.insert(init)
+        }
+    }
+
+    /// Replaces the value in the place with a new initialized value,
+    /// returning the old value if initialized.
+    ///
+    /// This is similar to [`Option::replace`], but will drop any existing
+    /// value in the place regardless of any panic during initialization.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{prelude::*, place::DynPlace};
+    ///
+    /// let mut place: DynPlace<String> = DynPlace::new();
+    /// let old = place.replace("Hello".to_string());
+    /// assert!(old.is_none());
+    ///
+    /// let old = place.replace("World".to_string());
+    /// assert_eq!(old, Some("Hello".to_string()));
+    ///
+    /// assert_eq!(place.as_deref(), Some("World"));
+    /// ```
+    pub fn replace<I, M>(&mut self, init: I) -> Option<T>
+    where
+        I: IntoInit<T, M>,
+    {
+        self.try_replace(init).unwrap()
+    }
+
+    /// Tries to replace the value in the place with a new initialized value,
+    /// returning the old value if initialized.
+    ///
+    /// This is similar to [`Option::replace`], but will drop any existing
+    /// value in the place, regardless of any error during initialization.
+    ///
+    /// # Errors
+    ///
+    /// This will return an error if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{prelude::*, place::DynPlace};
+    ///
+    /// let mut place: DynPlace<String> = DynPlace::new();
+    /// match place.try_replace("Hello".to_string()) {
+    ///     Ok(old) => assert!(old.is_none()),
+    ///     Err(_) => panic!("Initialization failed"),
+    /// }
+    /// ```
+    pub fn try_replace<I, M>(&mut self, init: I) -> Result<Option<T>, I::Error>
+    where
+        I: IntoInit<T, M>,
+    {
+        let old = self.take();
+        self.try_insert(init)?;
+        Ok(old)
+    }
+
+    /// Initializes the pinned place with the given initializer, returning a
+    /// pinned mutable reference to the value.
+    ///
+    /// This will drop any existing value in the place regardless of any panic
+    /// during initialization.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{prelude::*, place::DynPlace};
+    /// use core::pin::pin;
+    ///
+    /// let mut place = pin!(DynPlace::new());
+    /// let mut s = place.as_mut().insert_pin("Hello".to_string());
+    /// s.push_str(", world!");
+    /// assert_eq!(place.as_deref(), Some("Hello, world!"));
+    /// ```
+    pub fn insert_pin<I, M>(self: Pin<&mut Self>, init: I) -> Pin<&mut T>
+    where
+        I: IntoInitPin<T, M>,
+    {
+        self.try_insert_pin(init).unwrap()
+    }
+
+    /// Tries to initialize the pinned place with the given initializer,
+    /// returning a pinned mutable reference to the value.
+    ///
+    /// This will drop any existing value in the place, regardless of any error
+    /// during initialization.
+    ///
+    /// # Errors
+    ///
+    /// This will return an error if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{prelude::*, place::DynPlace};
+    /// use core::pin::pin;
+    ///
+    /// let mut place = pin!(DynPlace::new());
+    /// match place.as_mut().try_insert_pin("Hello".to_string()) {
+    ///     Ok(mut s) => {
+    ///         s.push_str(", world!");
+    ///         assert_eq!(place.as_deref(), Some("Hello, world!"));
+    ///     }
+    ///     Err(_) => panic!("Initialization failed"),
+    /// }
+    /// ```
+    pub fn try_insert_pin<I, M>(mut self: Pin<&mut Self>, init: I) -> Result<Pin<&mut T>, I::Error>
+    where
+        I: IntoInitPin<T, M>,
+    {
+        self.as_mut().drop_in_place_pin();
+
+        unsafe {
+            let mut slot = ManuallyDrop::new(DroppingSlot::new());
+            let slot_ref = DropSlot::new_unchecked(&mut slot);
+
+            let this = self.get_unchecked_mut();
+            let uninit = Uninit::from_raw(this.data.as_mut_ptr());
+            match init.into_init().init_pin(uninit, slot_ref) {
+                Ok(p) => {
+                    mem::forget(p);
+                    this.init = true;
+                    // SAFETY: We just initialized the value.
+                    Ok(Pin::new_unchecked(this.data.assume_init_mut()))
+                }
+                Err(e) => Err(e.error),
+            }
+        }
+    }
+
+    /// Initializes the pinned place with the given initializer if
+    /// uninitialized, returning a pinned mutable reference to the value.
+    ///
+    /// See also [`DynPlace::insert_pin`], which updates the value regardless
+    /// of the initialization state.
+    ///
+    /// This is similar to a pinned version of [`Option::get_or_insert`].
+    pub fn get_or_insert_pin<I, M>(self: Pin<&mut Self>, init: I) -> Pin<&mut T>
+    where
+        I: IntoInitPin<T, M>,
+    {
+        if self.is_init() {
+            // SAFETY: We checked that the value is initialized.
+            unsafe { Pin::new_unchecked(self.get_unchecked_mut().data.assume_init_mut()) }
+        } else {
+            self.insert_pin(init)
+        }
+    }
+}
+
+impl<T> Drop for DynPlace<T> {
+    fn drop(&mut self) {
+        self.drop_in_place();
+    }
+}
+
+unsafe impl<T> Place<T> for DynPlace<T> {
+    type Init = Self;
+
+    fn as_mut_ptr(&mut self) -> *mut T {
+        self.data.as_mut_ptr()
+    }
+
+    unsafe fn assume_init(mut self) -> Self::Init {
+        debug_assert!(!self.init);
+        self.init = true;
+        self
+    }
+
+    fn from_init(mut init: Self::Init) -> Self {
+        debug_assert!(init.init);
+        init.init = false;
+        init
+    }
+}
