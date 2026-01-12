@@ -1,4 +1,5 @@
 use core::{
+    fmt,
     mem::{self, ManuallyDrop, MaybeUninit},
     pin::Pin,
 };
@@ -6,7 +7,6 @@ use core::{
 use crate::{
     init::{Init, InitPin, IntoInit, IntoInitPin},
     pin::{DropSlot, DroppingSlot},
-    place::Place,
     uninit::Uninit,
 };
 
@@ -14,8 +14,12 @@ use crate::{
 ///
 /// This is similar to [`Option<T>`], but necessary for fallable in-place
 /// initialization patterns where `T` does not implement `Default` or `Clone`.
-/// For failed initializations , the old value is dropped and the place becomes
+/// For failed initializations, the old value is dropped and the place becomes
 /// uninitialized.
+///
+/// This structure doesn't implement [`Place<T>`] because its initialization
+/// state is dynamic and conflicts with the compile-time assertions by
+/// `Place<T>`.
 ///
 /// # Examples
 ///
@@ -34,10 +38,20 @@ use crate::{
 /// assert_eq!(s, "Hello, world!");
 /// assert!(!place.is_init());
 /// ```
-#[derive(Debug)]
+///
+/// [`Place<T>`]: crate::place::Place
 pub struct DynPlace<T> {
     init: bool,
     data: MaybeUninit<T>,
+}
+
+impl<T: fmt::Debug> fmt::Debug for DynPlace<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.as_ref() {
+            Some(value) => f.debug_tuple("DynPlace").field(value).finish(),
+            None => write!(f, "DynPlace(<uninit>)"),
+        }
+    }
 }
 
 impl<T> Default for DynPlace<T> {
@@ -60,6 +74,18 @@ impl<T> DynPlace<T> {
     #[inline]
     pub const fn is_init(&self) -> bool {
         self.init
+    }
+
+    /// Returns a raw pointer to the value.
+    #[inline]
+    pub const fn as_ptr(&self) -> *const T {
+        self.data.as_ptr()
+    }
+
+    /// Returns a mutable raw pointer to the value.
+    #[inline]
+    pub const fn as_mut_ptr(&mut self) -> *mut T {
+        self.data.as_mut_ptr()
     }
 
     /// Returns a reference to the value if initialized, or `None` otherwise.
@@ -464,25 +490,5 @@ impl<T> DynPlace<T> {
 impl<T> Drop for DynPlace<T> {
     fn drop(&mut self) {
         self.drop_in_place();
-    }
-}
-
-unsafe impl<T> Place<T> for DynPlace<T> {
-    type Init = Self;
-
-    fn as_mut_ptr(&mut self) -> *mut T {
-        self.data.as_mut_ptr()
-    }
-
-    unsafe fn assume_init(mut self) -> Self::Init {
-        debug_assert!(!self.init);
-        self.init = true;
-        self
-    }
-
-    fn from_init(mut init: Self::Init) -> Self {
-        debug_assert!(init.init);
-        init.init = false;
-        init
     }
 }
