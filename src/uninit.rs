@@ -303,7 +303,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     #[inline]
     pub fn write<I, M>(self, init: I) -> Own<'a, T>
     where
-        I: IntoInit<T, M, Error: fmt::Debug>,
+        I: IntoInit<T, M>,
     {
         self.try_write(init).unwrap()
     }
@@ -349,7 +349,7 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     #[inline]
     pub fn write_pin<'b, I, M>(self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
-        I: IntoInitPin<T, M, Error: fmt::Debug>,
+        I: IntoInitPin<T, M>,
     {
         self.try_write_pin(init, slot).unwrap()
     }

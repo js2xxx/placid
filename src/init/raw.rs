@@ -16,11 +16,11 @@ type PhantomResult<T, E> = PhantomData<(fn() -> T, fn() -> E)>;
 #[derive(Debug, PartialEq)]
 pub struct TryRawPin<F, T: ?Sized, E>(F, PhantomResult<T, E>);
 
-impl<T: ?Sized, F, E> Initializer for TryRawPin<F, T, E> {
+impl<T: ?Sized, F, E: core::fmt::Debug> Initializer for TryRawPin<F, T, E> {
     type Error = E;
 }
 
-impl<T: ?Sized, F, E> InitPin<T> for TryRawPin<F, T, E>
+impl<T: ?Sized, F, E: core::fmt::Debug> InitPin<T> for TryRawPin<F, T, E>
 where
     F: for<'a, 'b> FnOnce(Uninit<'a, T>, DropSlot<'a, 'b, T>) -> InitPinResult<'a, 'b, T, E>,
 {
@@ -57,11 +57,11 @@ where
 #[derive(Debug, PartialEq)]
 pub struct TryRaw<F, T: ?Sized, E>(F, PhantomResult<T, E>);
 
-impl<T: ?Sized, F, E> Initializer for TryRaw<F, T, E> {
+impl<T: ?Sized, F, E: core::fmt::Debug> Initializer for TryRaw<F, T, E> {
     type Error = E;
 }
 
-impl<T: ?Sized, F, E> InitPin<T> for TryRaw<F, T, E>
+impl<T: ?Sized, F, E: core::fmt::Debug> InitPin<T> for TryRaw<F, T, E>
 where
     F: FnOnce(Uninit<'_, T>) -> InitResult<'_, T, E>,
 {
@@ -78,7 +78,7 @@ where
     }
 }
 
-impl<T: ?Sized, F, E> Init<T> for TryRaw<F, T, E>
+impl<T: ?Sized, F, E: core::fmt::Debug> Init<T> for TryRaw<F, T, E>
 where
     F: FnOnce(Uninit<'_, T>) -> InitResult<'_, T, E>,
 {

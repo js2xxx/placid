@@ -89,14 +89,14 @@ impl<T: Clone> IntoInitPin<T, Value<T>> for T {
 #[derive(Debug, PartialEq)]
 pub struct TryWith<F>(F);
 
-impl<T, E, F> Initializer for TryWith<F>
+impl<T, E: core::fmt::Debug, F> Initializer for TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
 {
     type Error = E;
 }
 
-impl<T, E, F> InitPin<T> for TryWith<F>
+impl<T, E: core::fmt::Debug, F> InitPin<T> for TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
 {
@@ -117,7 +117,7 @@ where
     }
 }
 
-impl<T, F, E> Init<T> for TryWith<F>
+impl<T, F, E: core::fmt::Debug> Init<T> for TryWith<F>
 where
     F: FnOnce() -> Result<T, E>,
 {
@@ -174,7 +174,7 @@ where
     TryWith(f)
 }
 
-impl<T, E, F> IntoInitPin<T, TryWith<F>> for F
+impl<T, E: core::fmt::Debug, F> IntoInitPin<T, TryWith<F>> for F
 where
     F: FnOnce() -> Result<T, E>,
 {

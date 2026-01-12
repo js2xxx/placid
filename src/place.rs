@@ -7,7 +7,6 @@ use alloc::{boxed::Box, rc::Rc, sync::Arc};
 #[cfg(feature = "alloc")]
 use core::alloc::Allocator;
 use core::{
-    fmt,
     marker::{CoercePointee, PhantomData},
     mem::{self, ManuallyDrop, MaybeUninit},
     ops::Deref,
@@ -99,7 +98,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     #[inline]
     fn write<'b, M, I>(&'b mut self, init: I) -> Own<'b, T>
     where
-        I: IntoInit<T, M, Error: fmt::Debug>,
+        I: IntoInit<T, M>,
     {
         Uninit::from_mut(self).write(init)
     }
@@ -126,7 +125,7 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     #[inline]
     fn write_pin<'a, 'b, M, I>(&'a mut self, init: I, slot: DropSlot<'a, 'b, T>) -> POwn<'b, T>
     where
-        I: IntoInitPin<T, M, Error: fmt::Debug>,
+        I: IntoInitPin<T, M>,
     {
         Uninit::from_mut(self).write_pin(init, slot)
     }
@@ -150,10 +149,9 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// assert_eq!(*p, 42);
     /// ```
     #[inline]
-    fn init<M, I, E>(self, init: I) -> Self::Init
+    fn init<M, I>(self, init: I) -> Self::Init
     where
-        I: IntoInit<T, M, Error = E>,
-        E: fmt::Debug,
+        I: IntoInit<T, M>,
     {
         self.try_init(init).map_err(|(e, _)| e).unwrap()
     }
@@ -222,11 +220,10 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// assert_eq!(*place, 42);
     /// ```
     #[inline]
-    fn init_pin<M, I, E>(self, init: I) -> Pin<Self::Init>
+    fn init_pin<M, I>(self, init: I) -> Pin<Self::Init>
     where
-        I: IntoInitPin<T, M, Error = E>,
+        I: IntoInitPin<T, M>,
         Self::Init: Deref,
-        E: fmt::Debug,
     {
         self.try_init_pin(init).map_err(|(e, _)| e).unwrap()
     }

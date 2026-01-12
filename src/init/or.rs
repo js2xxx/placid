@@ -330,7 +330,7 @@ pub struct MapErr<I, F> {
     f: F,
 }
 
-impl<I, F, E> Initializer for MapErr<I, F>
+impl<I, F, E: core::fmt::Debug> Initializer for MapErr<I, F>
 where
     I: Initializer,
     F: FnOnce(I::Error) -> E,
@@ -338,7 +338,7 @@ where
     type Error = E;
 }
 
-impl<T, I, F, E> InitPin<T> for MapErr<I, F>
+impl<T, I, F, E: core::fmt::Debug> InitPin<T> for MapErr<I, F>
 where
     T: ?Sized,
     I: InitPin<T>,
@@ -353,7 +353,7 @@ where
     }
 }
 
-impl<T, I, F, E> Init<T> for MapErr<I, F>
+impl<T, I, F, E: core::fmt::Debug> Init<T> for MapErr<I, F>
 where
     T: ?Sized,
     I: Init<T>,

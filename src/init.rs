@@ -24,7 +24,7 @@ use crate::{
 )]
 pub trait Initializer: Sized {
     /// The error type that can occur during initialization.
-    type Error;
+    type Error: core::fmt::Debug;
 
     /// Maps the error type of the initializer using a closure.
     ///
@@ -449,7 +449,7 @@ pub trait IntoInitPin<T: ?Sized, Marker = ()>: Sized {
     /// Which kind of initializer this converts into?
     type Init: InitPin<T, Error = Self::Error>;
     /// The error type that can occur during initialization.
-    type Error;
+    type Error: core::fmt::Debug;
 
     /// Creates an initializer from this value.
     fn into_init(self) -> Self::Init;

@@ -23,7 +23,7 @@ pub trait PlaceConstruct<Args = ()>: Sized + Deref {
     /// The uninitialized place type that can be constructed into `Self`.
     type Uninit: Place<Self::Target, Init = Self>;
     /// The error type that can occur during construction.
-    type Error;
+    type Error: fmt::Debug;
 
     /// Tries to create a new uninitialized place with specified arguments.
     ///
@@ -37,10 +37,7 @@ pub trait PlaceConstruct<Args = ()>: Sized + Deref {
     /// # Panics
     ///
     /// This method will panic if the creation fails.
-    fn new_uninit_in(args: Args) -> Self::Uninit
-    where
-        Self::Error: fmt::Debug,
-    {
+    fn new_uninit_in(args: Args) -> Self::Uninit {
         Self::try_new_uninit_in(args).expect("failed to allocate a new uninitialized place")
     }
 }
@@ -93,11 +90,9 @@ macro_rules! place_construct {
             $(#[$new_meta])*
             fn $new<M, I>($($($arg_name: $arg_ty,)*)? init: I) -> Self
             where
-                Self::Error: fmt::Debug,
                 I: IntoInit<
                     place_construct![@TARGET $($target)?],
                     M,
-                    Error: fmt::Debug
                 >,
             {
                 Self::new_uninit_in(($($($arg_name),*)?)).init(init)
@@ -118,8 +113,7 @@ macro_rules! place_construct {
             fn $pin<M, I>($($($arg_name: $arg_ty,)*)? init: I) -> Pin<Self>
             where
                 Self: Deref,
-                Self::Error: fmt::Debug,
-                I: IntoInitPin<place_construct![@TARGET $($target)?], M, Error: fmt::Debug>,
+                I: IntoInitPin<place_construct![@TARGET $($target)?], M>,
             {
                 Self::new_uninit_in(($($($arg_name),*)?)).init_pin(init)
             }
