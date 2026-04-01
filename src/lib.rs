@@ -269,6 +269,7 @@
 #![feature(maybe_uninit_fill)]
 #![feature(min_specialization)]
 #![feature(ptr_metadata)]
+#![feature(trivial_clone)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

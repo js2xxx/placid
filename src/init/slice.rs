@@ -1,6 +1,8 @@
 use core::{
+    clone::TrivialClone,
     convert::Infallible,
     mem::{self, MaybeUninit},
+    ptr,
 };
 
 use crate::{
@@ -57,13 +59,14 @@ impl<T: Clone> SpecInitSlice<T> for &[T] {
     }
 }
 
-impl<T: Copy> SpecInitSlice<T> for &[T] {
+impl<T: TrivialClone> SpecInitSlice<T> for &[T] {
     fn init_slice(self, mut place: Uninit<'_, [T]>) -> InitResult<'_, [T], SliceError> {
         if place.len() != self.len() {
             return Err(InitError { error: SliceError, place });
         }
 
-        place.write_copy_of_slice(self);
+        // SAFETY: `TrivialClone` guarantees that we can copy the bits directly.
+        unsafe { ptr::copy_nonoverlapping(self.as_ptr(), place.as_mut_ptr().cast(), self.len()) };
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
     }
@@ -76,7 +79,8 @@ impl<T: Copy> SpecInitSlice<T> for &[T] {
             return Err(InitError { error: SliceError, place });
         }
 
-        maybe_uninit_slice(&mut place).write_copy_of_slice(self);
+        // SAFETY: `TrivialClone` guarantees that we can copy the bits directly.
+        unsafe { ptr::copy_nonoverlapping(self.as_ptr(), place.as_mut_ptr().cast(), self.len()) };
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
     }
