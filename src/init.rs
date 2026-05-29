@@ -57,6 +57,29 @@ pub trait Initializer: Sized {
         map_err(self, f)
     }
 
+    /// Unwraps the error of an initializer, panicking if initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let owned: Own<u32> = own!(init::value(10u32).unwrap());
+    /// assert_eq!(*owned, 10);
+    /// ```
+    ///
+    /// ```rust,should_panic
+    /// use placid::prelude::*;
+    ///
+    /// let owned: Own<u32> = own!(
+    ///     init::try_with(|| -> Result<_, &str> { Err("initialization failed") })
+    ///         .unwrap()
+    /// );
+    /// ```
+    fn unwrap(self) -> MapErr<Self, impl FnOnce(Self::Error) -> Infallible> {
+        unwrap(self)
+    }
+
     /// Adapts an infallible initializer to have a different error type.
     ///
     /// Since the initializer cannot fail, the provided closure will never be
@@ -499,7 +522,7 @@ pub use self::and::{And, AndPin, and, and_pin};
 
 mod or;
 pub use self::or::{
-    MapErr, Or, OrElse, UnwrapOr, UnwrapOrElse, adapt_err, map_err, or, or_else, unwrap_or,
+    MapErr, Or, OrElse, UnwrapOr, UnwrapOrElse, adapt_err, map_err, or, or_else, unwrap, unwrap_or,
     unwrap_or_else,
 };
 

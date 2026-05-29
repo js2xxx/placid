@@ -390,6 +390,35 @@ where
     MapErr { init, f }
 }
 
+/// Unwraps the error of an initializer, panicking if initialization fails.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::prelude::*;
+///
+/// let owned: Own<u32> = own!(init::unwrap(
+///     init::value(10u32),
+/// ));
+/// assert_eq!(*owned, 10);
+/// ```
+///
+/// ```rust,should_panic
+/// use placid::prelude::*;
+///
+/// let owned: Own<u32> = own!(init::unwrap(
+///     init::try_with(|| -> Result<_, &str> { Err("initialization failed") }),
+/// ));
+/// ```
+pub const fn unwrap<I>(init: I) -> MapErr<I, impl FnOnce(I::Error) -> Infallible>
+where
+    I: Initializer,
+{
+    map_err(init, |e| {
+        panic!("called `unwrap()` on a failed initialization: {e:?}")
+    })
+}
+
 /// Adapts an infallible initializer to one that can fail with any error type.
 ///
 /// Since the original initializer cannot fail, the provided closure will never

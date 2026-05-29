@@ -325,6 +325,25 @@ impl<'a, T> Own<'a, T> {
         let place = unsafe { Uninit::from_inner(inner) };
         (value, place)
     }
+
+    /// Takes the value out of the owned reference.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let my_place: Own<i32> = own!(100);
+    /// let value: i32 = Own::into_inner(my_place);
+    /// assert_eq!(value, 100);
+    /// ```
+    #[inline]
+    pub const fn into_inner(this: Self) -> T {
+        let inner = this.inner;
+        mem::forget(this);
+        // SAFETY: We have exclusive ownership of the value, so we can take it out.
+        unsafe { inner.read() }
+    }
 }
 
 macro_rules! impl_downcast {
