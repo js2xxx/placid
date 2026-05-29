@@ -11,7 +11,7 @@ edition = "2024"
 keywords = ["ownership", "pin", "macros", "place"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/js2xxx/placid"
-version = "0.2.0"
+version = "0.2.1"
 
 [package]
 authors.workspace = true
@@ -36,7 +36,7 @@ fn-impl = ["alloc"]
 
 [dependencies]
 # Local crates
-placid-macro = {version = "=0.2.0", path = "macro"}
+placid-macro = {version = "=0.2.1", path = "macro"}
 # External crates
 thiserror = {version = "2.0", default-features = false}
 
