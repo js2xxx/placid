@@ -1,4 +1,9 @@
-use core::convert::Infallible;
+use core::{
+    clone::CloneToUninit,
+    convert::Infallible,
+    mem::{self, size_of_val_raw},
+    ptr,
+};
 
 use crate::{
     init::{
@@ -268,5 +273,98 @@ where
     #[inline]
     fn into_init(self) -> Self::Init {
         With(self)
+    }
+}
+
+/// The error type for the moving and cloning initializer when the size of the
+/// source value does not match the size of the destination place.
+#[derive(Debug, thiserror::Error)]
+#[error("object size mismatch")]
+pub struct ValueError;
+
+/// Creates an initializer that clones a value from a reference.
+///
+/// This initializer is created by the [`clone()`] factory function.
+#[derive(Debug, PartialEq)]
+pub struct CloneInit<'a, T: ?Sized>(&'a T);
+
+impl<T: ?Sized> Initializer for CloneInit<'_, T> {
+    type Error = ValueError;
+}
+
+impl<T: ?Sized + CloneToUninit> InitPin<T> for CloneInit<'_, T> {
+    #[inline]
+    fn init_pin<'a, 'b>(
+        self,
+        mut place: Uninit<'a, T>,
+        slot: DropSlot<'a, 'b, T>,
+    ) -> InitPinResult<'a, 'b, T, ValueError> {
+        let src = self.0;
+        let dst = place.as_mut_ptr();
+
+        let size = size_of_val(src);
+        // SAFETY: The pointer metadata of `dst` is always valid since `Uninit<T>`
+        // points to a valid uninitialized memory for `T`.
+        if size != unsafe { size_of_val_raw(dst) } {
+            return Err(InitPinError::new(ValueError, place, slot));
+        }
+
+        // SAFETY: `src` and `dst` are valid for reads/writes of `size` bytes.
+        unsafe { src.clone_to_uninit(dst.cast()) };
+
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init_pin(slot) })
+    }
+}
+
+impl<T: ?Sized + CloneToUninit> Init<T> for CloneInit<'_, T> {
+    #[inline]
+    fn init(self, mut place: Uninit<'_, T>) -> InitResult<'_, T, ValueError> {
+        let src = self.0;
+        let dst = place.as_mut_ptr();
+
+        let size = size_of_val(src);
+        // SAFETY: The pointer metadata of `dst` is always valid since `Uninit<T>`
+        // points to a valid uninitialized memory for `T`.
+        if size != unsafe { size_of_val_raw(dst) } {
+            return Err(InitError::new(ValueError, place));
+        }
+
+        // SAFETY: `src` and `dst` are valid for reads/writes of `size` bytes.
+        unsafe { src.clone_to_uninit(dst.cast()) };
+
+        // SAFETY: The place is now initialized.
+        Ok(unsafe { place.assume_init() })
+    }
+}
+
+/// Creates an initializer that clones a value from a reference.
+///
+/// The provided value is not necessarily [`Sized`], but the initializer will
+/// fail if the size of the value does not match the size of the destination
+/// place, which could only happen if unsized.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::prelude::*;
+///
+/// let src = String::from("hello");
+/// let uninit: Uninit<String> = uninit!(String);
+/// let result = uninit.write(init::clone(&src));
+/// assert_eq!(*result, String::from("hello"));
+/// ```
+#[inline]
+pub const fn clone<T: ?Sized + CloneToUninit>(this: &T) -> CloneInit<'_, T> {
+    CloneInit(this)
+}
+
+impl<'a, T: ?Sized + CloneToUninit> IntoInitPin<T, CloneInit<'a, T>> for &'a T {
+    type Init = CloneInit<'a, T>;
+    type Error = ValueError;
+
+    #[inline]
+    fn into_init(self) -> Self::Init {
+        CloneInit(self)
     }
 }

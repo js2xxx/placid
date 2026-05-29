@@ -267,10 +267,9 @@
 #![feature(derive_coerce_pointee)]
 #![feature(dropck_eyepatch)]
 #![feature(exact_div)]
+#![feature(layout_for_ptr, clone_to_uninit)]
 #![feature(maybe_uninit_fill)]
-#![feature(min_specialization)]
 #![feature(ptr_metadata)]
-#![feature(trivial_clone)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

@@ -536,7 +536,7 @@ pub use self::slice::{
 };
 
 mod value;
-pub use self::value::{TryWith, Value, With, try_with, value, with};
+pub use self::value::{CloneInit, TryWith, Value, ValueError, With, clone, try_with, value, with};
 
 // Implemetations for the standard library types
 

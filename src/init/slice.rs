@@ -1,5 +1,4 @@
 use core::{
-    clone::TrivialClone,
     convert::Infallible,
     marker::PhantomData,
     mem::{self, MaybeUninit},
@@ -8,7 +7,6 @@ use core::{
 
 use crate::{
     init::{Init, InitError, InitPin, InitPinResult, InitResult, Initializer, IntoInitPin},
-    owned::Own,
     pin::DropSlot,
     uninit::Uninit,
 };
@@ -25,67 +23,6 @@ fn maybe_uninit_slice<T, const N: usize>(m: &mut MaybeUninit<[T; N]>) -> &mut [M
 #[derive(Debug, thiserror::Error, Clone, Copy, PartialEq)]
 #[error("slice length mismatch")]
 pub struct SliceError;
-
-trait SpecInitSlice<T> {
-    fn init_slice(self, place: Uninit<'_, [T]>) -> InitResult<'_, [T], SliceError>;
-
-    fn init_array<const N: usize>(
-        self,
-        place: Uninit<'_, [T; N]>,
-    ) -> InitResult<'_, [T; N], SliceError>;
-}
-
-impl<T: Clone> SpecInitSlice<T> for &[T] {
-    default fn init_slice(self, mut place: Uninit<'_, [T]>) -> InitResult<'_, [T], SliceError> {
-        if place.len() != self.len() {
-            return Err(InitError { error: SliceError, place });
-        }
-
-        place.write_clone_of_slice(self);
-        // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
-    }
-
-    default fn init_array<const N: usize>(
-        self,
-        mut place: Uninit<'_, [T; N]>,
-    ) -> InitResult<'_, [T; N], SliceError> {
-        if N != self.len() {
-            return Err(InitError { error: SliceError, place });
-        }
-
-        maybe_uninit_slice(&mut place).write_clone_of_slice(self);
-        // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
-    }
-}
-
-impl<T: TrivialClone> SpecInitSlice<T> for &[T] {
-    fn init_slice(self, mut place: Uninit<'_, [T]>) -> InitResult<'_, [T], SliceError> {
-        if place.len() != self.len() {
-            return Err(InitError { error: SliceError, place });
-        }
-
-        // SAFETY: `TrivialClone` guarantees that we can copy the bits directly.
-        unsafe { ptr::copy_nonoverlapping(self.as_ptr(), place.as_mut_ptr().cast(), self.len()) };
-        // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
-    }
-
-    fn init_array<const N: usize>(
-        self,
-        mut place: Uninit<'_, [T; N]>,
-    ) -> InitResult<'_, [T; N], SliceError> {
-        if N != self.len() {
-            return Err(InitError { error: SliceError, place });
-        }
-
-        // SAFETY: `TrivialClone` guarantees that we can copy the bits directly.
-        unsafe { ptr::copy_nonoverlapping(self.as_ptr(), place.as_mut_ptr().cast(), self.len()) };
-        // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
-    }
-}
 
 /// Initializes a slice by copying or cloning elements from a source slice.
 ///
@@ -105,17 +42,18 @@ impl<T: Clone> InitPin<[T]> for Slice<'_, T> {
         place: Uninit<'a, [T]>,
         slot: DropSlot<'a, 'b, [T]>,
     ) -> InitPinResult<'a, 'b, [T], SliceError> {
-        match self.0.init_slice(place) {
-            Ok(own) => Ok(Own::into_pin(own, slot)),
-            Err(err) => Err(err.into_pin(slot)),
-        }
+        crate::init::clone(self.0)
+            .init_pin(place, slot)
+            .map_err(|e| e.map(|_| SliceError))
     }
 }
 
 impl<T: Clone> Init<[T]> for Slice<'_, T> {
     #[inline]
     fn init(self, place: Uninit<'_, [T]>) -> InitResult<'_, [T], SliceError> {
-        self.0.init_slice(place)
+        crate::init::clone(self.0)
+            .init(place)
+            .map_err(|e| e.map(|_| SliceError))
     }
 }
 
@@ -126,17 +64,20 @@ impl<T: Clone, const N: usize> InitPin<[T; N]> for Slice<'_, T> {
         place: Uninit<'a, [T; N]>,
         slot: DropSlot<'a, 'b, [T; N]>,
     ) -> InitPinResult<'a, 'b, [T; N], SliceError> {
-        match self.0.init_array(place) {
-            Ok(own) => Ok(Own::into_pin(own, slot)),
-            Err(err) => Err(err.into_pin(slot)),
-        }
+        let Some(arr) = self.0.as_array() else {
+            return Err(InitError { error: SliceError, place }.into_pin(slot));
+        };
+        Ok(crate::init::clone(arr).init_pin(place, slot).unwrap())
     }
 }
 
 impl<T: Clone, const N: usize> Init<[T; N]> for Slice<'_, T> {
     #[inline]
     fn init(self, place: Uninit<'_, [T; N]>) -> InitResult<'_, [T; N], SliceError> {
-        self.0.init_array(place)
+        let Some(arr) = self.0.as_array() else {
+            return Err(InitError { error: SliceError, place });
+        };
+        Ok(crate::init::clone::<[T; N]>(arr).init(place).unwrap())
     }
 }
 
@@ -178,16 +119,6 @@ pub const fn slice<T: Clone>(s: &[T]) -> Slice<'_, T> {
     Slice(s)
 }
 
-impl<'a, T: Clone> IntoInitPin<[T], Slice<'a, T>> for &'a [T] {
-    type Init = Slice<'a, T>;
-    type Error = SliceError;
-
-    #[inline]
-    fn into_init(self) -> Self::Init {
-        Slice(self)
-    }
-}
-
 impl<'a, T: Clone, const N: usize> IntoInitPin<[T; N], Slice<'a, T>> for &'a [T] {
     type Init = Slice<'a, T>;
     type Error = SliceError;
@@ -209,32 +140,24 @@ impl Initializer for Str<'_> {
 }
 
 impl InitPin<str> for Str<'_> {
+    #[inline]
     fn init_pin<'a, 'b>(
         self,
-        mut place: Uninit<'a, str>,
+        place: Uninit<'a, str>,
         slot: DropSlot<'a, 'b, str>,
     ) -> InitPinResult<'a, 'b, str, SliceError> {
-        if place.len() != self.0.len() {
-            return Err(InitError { error: SliceError, place }.into_pin(slot));
-        }
-
-        let src = unsafe { mem::transmute::<&[u8], &[MaybeUninit<u8>]>(self.0.as_bytes()) };
-        place.copy_from_slice(src);
-        // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init_pin(slot) })
+        crate::init::clone(self.0)
+            .init_pin(place, slot)
+            .map_err(|e| e.map(|_| SliceError))
     }
 }
 
 impl Init<str> for Str<'_> {
-    fn init(self, mut place: Uninit<'_, str>) -> InitResult<'_, str, SliceError> {
-        if place.len() != self.0.len() {
-            return Err(InitError { error: SliceError, place });
-        }
-
-        let src = unsafe { mem::transmute::<&[u8], &[MaybeUninit<u8>]>(self.0.as_bytes()) };
-        place.copy_from_slice(src);
-        // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
+    #[inline]
+    fn init(self, place: Uninit<'_, str>) -> InitResult<'_, str, SliceError> {
+        crate::init::clone(self.0)
+            .init(place)
+            .map_err(|e| e.map(|_| SliceError))
     }
 }
 
@@ -261,16 +184,6 @@ impl Init<str> for Str<'_> {
 #[inline]
 pub const fn str(s: &str) -> Str<'_> {
     Str(s)
-}
-
-impl<'b> IntoInitPin<str, Str<'b>> for &'b str {
-    type Init = Str<'b>;
-    type Error = SliceError;
-
-    #[inline]
-    fn into_init(self) -> Self::Init {
-        Str(self)
-    }
 }
 
 /// Initializes all elements of a slice with a single repeated value.
