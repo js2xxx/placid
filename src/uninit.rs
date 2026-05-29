@@ -7,7 +7,6 @@ use core::{
     mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
     ptr::NonNull,
-    slice,
 };
 
 use crate::{
@@ -79,7 +78,7 @@ impl<'a, T> Deref for Uninit<'a, [T]> {
         // SAFETY: We are treating the place as uninitialized.
         unsafe {
             let data = self.inner.as_ptr();
-            slice::from_raw_parts(data.cast(), data.len())
+            core::slice::from_raw_parts(data.cast(), data.len())
         }
     }
 }
@@ -90,7 +89,7 @@ impl<'a, T> DerefMut for Uninit<'a, [T]> {
         // SAFETY: We are treating the place as uninitialized.
         unsafe {
             let data = self.inner.as_ptr();
-            slice::from_raw_parts_mut(data.cast(), data.len())
+            core::slice::from_raw_parts_mut(data.cast(), data.len())
         }
     }
 }
@@ -103,7 +102,7 @@ impl<'a> Deref for Uninit<'a, str> {
         // SAFETY: We are treating the place as uninitialized.
         unsafe {
             let (addr, len) = self.inner.as_ptr().to_raw_parts();
-            slice::from_raw_parts(addr.cast(), len)
+            core::slice::from_raw_parts(addr.cast(), len)
         }
     }
 }
@@ -114,7 +113,7 @@ impl<'a> DerefMut for Uninit<'a, str> {
         // SAFETY: We are treating the place as uninitialized.
         unsafe {
             let (addr, len) = self.inner.as_ptr().to_raw_parts();
-            slice::from_raw_parts_mut(addr.cast(), len)
+            core::slice::from_raw_parts_mut(addr.cast(), len)
         }
     }
 }
@@ -385,5 +384,77 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
 impl<'a, T: ?Sized> fmt::Debug for Uninit<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Uninit<{}>", core::any::type_name::<T>())
+    }
+}
+
+impl<'a, T> Uninit<'a, [T]> {
+    /// Fills a slice with elements yielded by an iterator until either all
+    /// elements have been initialized or the iterator is empty.
+    ///
+    /// Returns two slices. The first slice contains the initialized portion of
+    /// the original slice. The second slice is the still-uninitialized
+    /// remainder of the original slice.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the iterator's `next` function panics.
+    ///
+    /// If such a panic occurs, any elements previously initialized during this
+    /// operation will be dropped.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let mut uninit: Uninit<[i32; 5]> = uninit!();
+    /// let (init, uninit) = uninit.write_iter([1, 2, 4]);
+    /// assert_eq!(*init, [1, 2, 4]);
+    /// assert_eq!(uninit.len(), 2);
+    /// ```
+    pub fn write_iter<I>(mut self, iter: I) -> (Own<'a, [T]>, Uninit<'a, [T]>)
+    where
+        I: IntoIterator<Item = T>,
+    {
+        let (init, _) = (*self).write_iter(iter);
+        let len = init.len();
+
+        // SAFETY: We have just initialized the first `len` elements of the slice.
+        let (init, remaining) = unsafe { self.split_at_unchecked(len) };
+        (unsafe { init.assume_init() }, remaining)
+    }
+}
+
+impl<'a, T, const N: usize> Uninit<'a, [T; N]> {
+    /// Fills an array with elements yielded by an iterator until either all
+    /// elements have been initialized or the iterator is empty.
+    ///
+    /// Returns a tuple containing the initialized portion of the original array
+    /// and the number of elements that were initialized. The remaining elements
+    /// in the original array are still uninitialized.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the iterator's `next` function panics.
+    ///
+    /// If such a panic occurs, any elements previously initialized during this
+    /// operation will be dropped.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let mut uninit: Uninit<[i32; 5]> = uninit!();
+    /// let (init, uninit) = uninit.write_iter([1, 2, 4]);
+    /// assert_eq!(*init, [1, 2, 4]);
+    /// assert_eq!(uninit.len(), 2);
+    /// ```
+    #[inline]
+    pub fn write_iter<I>(self, iter: I) -> (Own<'a, [T]>, Uninit<'a, [T]>)
+    where
+        I: IntoIterator<Item = T>,
+    {
+        (self as Uninit<'a, [T]>).write_iter(iter)
     }
 }

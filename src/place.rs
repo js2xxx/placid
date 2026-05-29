@@ -26,6 +26,7 @@ use crate::{
 mod dyn_place;
 pub use self::dyn_place::DynPlace;
 
+mod array;
 mod slice;
 
 /// A place in memory that can hold an owned value of type `T`.
