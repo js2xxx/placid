@@ -434,7 +434,7 @@ where
 ///
 /// This initializer is created by the [`from_iter()`] factory function.
 #[derive(Debug, PartialEq)]
-pub struct FromIter<I, T>(I, PhantomData<T>);
+pub struct FromIter<I, T>(I, PhantomData<fn() -> T>);
 
 /// The error type for `FromIter` initialization failures.
 #[derive(Debug, thiserror::Error)]
@@ -445,56 +445,38 @@ impl<I, T> Initializer for FromIter<I, T> {
     type Error = FromIterError;
 }
 
-/// # Safety
-///
-/// `ptr` must point to a valid memory location that can hold `N` elements of
-/// type `T`.
-unsafe fn collect_iter<T, I>(ptr: *mut [T], iter: I) -> Result<(), FromIterError>
+#[inline]
+fn collect_iter_slice<T, I>(uninit: &mut [MaybeUninit<T>], iter: I) -> Result<(), FromIterError>
 where
     I: IntoIterator<Item = T>,
 {
-    struct Guard<T> {
-        ptr: *mut [T],
-        initialized: usize,
-    }
-
-    impl<T> Guard<T> {
-        fn write(&mut self, element: T) {
-            debug_assert!(self.initialized < self.ptr.len());
-            unsafe {
-                let dst = self.ptr.cast::<T>().add(self.initialized);
-                dst.write(element);
-                self.initialized += 1;
-            }
+    let (_, remaining) = uninit.write_iter(iter);
+    match remaining.len() {
+        0 => Ok(()),
+        len => {
+            let init_len = uninit.len() - len;
+            // SAFETY: We have initialized the first `init_len` elements, so we can safely
+            // drop them.
+            unsafe { uninit[..init_len].assume_init_drop() };
+            Err(FromIterError(()))
         }
     }
-
-    impl<T> Drop for Guard<T> {
-        fn drop(&mut self) {
-            unsafe {
-                let init = ptr::slice_from_raw_parts_mut(self.ptr.cast::<T>(), self.initialized);
-                ptr::drop_in_place(init);
-            }
-        }
-    }
-
-    let mut iter = iter.into_iter();
-    let mut writer = Guard { ptr, initialized: 0 };
-
-    for _ in 0..writer.ptr.len() {
-        let element = iter.next().ok_or(FromIterError(()))?;
-        writer.write(element);
-    }
-
-    Ok(())
 }
 
-unsafe fn concat_str<'a>(
-    ptr: *mut str,
-    iter: impl IntoIterator<Item = &'a str>,
+#[inline]
+fn collect_iter_array<T, const N: usize>(
+    uninit: &mut MaybeUninit<[T; N]>,
+    iter: impl IntoIterator<Item = T>,
 ) -> Result<(), FromIterError> {
-    let mut dst = ptr.cast::<u8>();
-    let mut remaining = unsafe { core::mem::transmute::<*mut str, *mut [u8]>(ptr) }.len();
+    collect_iter_slice(maybe_uninit_slice(uninit), iter)
+}
+
+fn concat_str<'a, I>(uninit: &mut [MaybeUninit<u8>], iter: I) -> Result<(), FromIterError>
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let mut remaining = uninit.len();
+    let mut dst = uninit.as_mut_ptr().cast::<u8>();
 
     for s in iter {
         let bytes = s.as_bytes();
@@ -517,12 +499,12 @@ unsafe fn concat_str<'a>(
     Err(FromIterError(()))
 }
 
-unsafe fn collect_chars(
-    ptr: *mut str,
-    iter: impl IntoIterator<Item = char>,
-) -> Result<(), FromIterError> {
-    let mut dst = ptr.cast::<u8>();
-    let mut remaining = unsafe { core::mem::transmute::<*mut str, *mut [u8]>(ptr) }.len();
+fn collect_chars<I>(uninit: &mut [MaybeUninit<u8>], iter: I) -> Result<(), FromIterError>
+where
+    I: IntoIterator<Item = char>,
+{
+    let mut remaining = uninit.len();
+    let mut dst = uninit.as_mut_ptr().cast::<u8>();
 
     for c in iter {
         if remaining < c.len_utf8() {
@@ -555,7 +537,7 @@ macro_rules! derive_from_iter {
                 mut place: Uninit<'a, $ty>,
                 slot: DropSlot<'a, 'b, $ty>,
             ) -> InitPinResult<'a, 'b, $ty, FromIterError> {
-                match unsafe { $imp(place.as_mut_ptr(), self.0) } {
+                match $imp(&mut *place, self.0) {
                     Ok(()) => Ok(unsafe { place.assume_init_pin(slot) }),
                     Err(err) => Err(InitError { error: err, place }.into_pin(slot)),
                 }
@@ -567,7 +549,7 @@ macro_rules! derive_from_iter {
             __I: IntoIterator<Item = $item>,
         {
             fn init(self, mut place: Uninit<'_, $ty>) -> InitResult<'_, $ty, FromIterError> {
-                match unsafe { $imp(place.as_mut_ptr(), self.0) } {
+                match $imp(&mut *place, self.0) {
                     Ok(()) => Ok(unsafe { place.assume_init() }),
                     Err(err) => Err(InitError { error: err, place }),
                 }
@@ -577,8 +559,8 @@ macro_rules! derive_from_iter {
 }
 
 derive_from_iter! {
-    @[T]:                 T => [T]    = collect_iter,
-    @[T, const N: usize]: T => [T; N] = collect_iter,
+    @[T]:                 T => [T]    = collect_iter_slice,
+    @[T, const N: usize]: T => [T; N] = collect_iter_array,
 
     @['t]: &'t str => str = concat_str,
               char => str = collect_chars,
@@ -604,7 +586,8 @@ derive_from_iter! {
 ///   in the concatenated string.
 ///
 /// Upon error, any elements that have already been initialized are properly
-/// dropped to prevent memory leaks.
+/// dropped to prevent memory leaks; the number of items produced by the
+/// iterator is not specified.
 ///
 /// # Examples
 ///
@@ -634,4 +617,218 @@ where
     I: IntoIterator<Item = T>,
 {
     FromIter(iter, PhantomData)
+}
+
+/// Initializes a slice by invoking an incremental closure.
+///
+/// This initializer is created by the [`incremental()`] factory function.
+#[derive(Debug, PartialEq)]
+pub struct Incremental<F, A: ?Sized, T>(F, PhantomData<fn(&mut A) -> T>);
+
+impl<F, A: ?Sized, T> Initializer for Incremental<F, A, T> {
+    type Error = Infallible;
+}
+
+fn write_inc_slice<T, F>(uninit: &mut [MaybeUninit<T>], mut f: F)
+where
+    F: FnMut(&mut [T]) -> T,
+{
+    struct Guard<'a, T> {
+        slice: &'a mut [MaybeUninit<T>],
+        initialized: usize,
+    }
+
+    impl<'a, T> Guard<'a, T> {
+        fn initialized(&mut self) -> &mut [T] {
+            let init_part = &mut self.slice[..self.initialized];
+            // SAFETY: this raw sub-slice will contain only initialized objects.
+            unsafe { init_part.assume_init_mut() }
+        }
+
+        fn write(&mut self, v: T) {
+            self.slice[self.initialized].write(v);
+            self.initialized += 1;
+        }
+    }
+
+    impl<'a, T> Drop for Guard<'a, T> {
+        fn drop(&mut self) {
+            let initialized_part = &mut self.slice[..self.initialized];
+            // SAFETY: this raw sub-slice will contain only initialized objects.
+            unsafe {
+                initialized_part.assume_init_drop();
+            }
+        }
+    }
+
+    let mut guard = Guard { slice: uninit, initialized: 0 };
+    for _ in 0..guard.slice.len() {
+        let next = f(guard.initialized());
+        guard.write(next);
+    }
+}
+
+#[inline]
+fn write_inc_array<T, F, const N: usize>(uninit: &mut MaybeUninit<[T; N]>, f: F)
+where
+    F: FnMut(&mut [T]) -> T,
+{
+    write_inc_slice(maybe_uninit_slice(uninit), f)
+}
+
+fn write_inc_str<'t, F>(uninit: &mut [MaybeUninit<u8>], mut f: F)
+where
+    F: FnMut(&mut str) -> &'t str,
+{
+    let mut initialized = 0;
+    let total = uninit.len();
+    let dst = uninit.as_mut_ptr().cast::<u8>();
+
+    loop {
+        let next = f(unsafe {
+            let init = core::slice::from_raw_parts_mut(dst, initialized);
+            core::str::from_utf8_unchecked_mut(init)
+        });
+
+        let bytes = next.as_bytes();
+        let len = (total - initialized).min(bytes.len());
+
+        // Checks if `len` is a valid code point boundary.
+        assert!(
+            next.is_char_boundary(len),
+            "invalid UTF-8 boundary in incremental initialization"
+        );
+
+        unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), dst.add(initialized), len) };
+        initialized += len;
+
+        if initialized == total {
+            break;
+        }
+    }
+}
+
+fn write_inc_chars<F>(uninit: &mut [MaybeUninit<u8>], mut f: F)
+where
+    F: FnMut(&mut str) -> char,
+{
+    let mut initialized = 0;
+    let total = uninit.len();
+    let dst = uninit.as_mut_ptr().cast::<u8>();
+
+    loop {
+        let next = f(unsafe {
+            let init = core::slice::from_raw_parts_mut(dst, initialized);
+            core::str::from_utf8_unchecked_mut(init)
+        });
+
+        assert!(
+            initialized + next.len_utf8() <= total,
+            "not enough space for next char in incremental initialization"
+        );
+
+        let mut buf = [0; 4];
+        let bytes = next.encode_utf8(&mut buf).as_bytes();
+
+        unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), dst.add(initialized), bytes.len()) };
+        initialized += bytes.len();
+
+        if initialized == total {
+            break;
+        }
+    }
+}
+
+macro_rules! derive_incremental {
+    (@COERCED $ty:ty |[$coerced:ty]) => { $coerced };
+    (@COERCED $ty:ty) => { $ty };
+    ($($(@[$($g:tt)*]:)? $item:ty => $ty:ty $(|[$coerced:ty])? = $imp:ident),* $(,)?) => {$(
+        impl<$($($g)*,)? __F> InitPin<$ty> for Incremental<
+            __F,
+            derive_incremental!(@COERCED $ty $(|[$coerced])?),
+            $item,
+        >
+        where
+            __F: FnMut(
+                &mut derive_incremental!(@COERCED $ty $(|[$coerced])?)
+            ) -> $item,
+        {
+            fn init_pin<'a, 'b>(
+                self,
+                mut place: Uninit<'a, $ty>,
+                slot: DropSlot<'a, 'b, $ty>,
+            ) -> InitPinResult<'a, 'b, $ty, Infallible> {
+                $imp(&mut *place, self.0);
+                Ok(unsafe { place.assume_init_pin(slot) })
+            }
+        }
+
+        impl<$($($g)*,)? __F> Init<$ty> for Incremental<
+            __F,
+            derive_incremental!(@COERCED $ty $(|[$coerced])?),
+            $item,
+        >
+        where
+            __F: FnMut(
+                &mut derive_incremental!(@COERCED $ty $(|[$coerced])?)
+            ) -> $item,
+        {
+            fn init(self, mut place: Uninit<'_, $ty>) -> InitResult<'_, $ty, Infallible> {
+                $imp(&mut *place, self.0);
+                Ok(unsafe { place.assume_init() })
+            }
+        }
+    )*};
+}
+
+derive_incremental! {
+    @[T]:                 T => [T]           = write_inc_slice,
+    @[T, const N: usize]: T => [T; N] |[[T]] = write_inc_array,
+
+    @['t]: &'t str => str = write_inc_str,
+              char => str = write_inc_chars,
+}
+
+/// Initializes a slice/str by invoking an incremental closure.
+///
+/// This is used to initialize a slice/str by repeatedly calling a closure that
+/// produces the next element based on the elements initialized so far. This
+/// allows for complex initialization patterns that depend on previously
+/// initialized elements.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::prelude::*;
+///
+/// let mut uninit = uninit!([i32; 5]);
+/// let owned = uninit.write(init::incremental(|init: &mut [i32]| {
+///     match init {
+///         [] => 1,
+///         [.., last] => *last * 2,
+///     }
+/// }));
+/// assert_eq!(&*owned, &[1, 2, 4, 8, 16]);
+///
+/// let mut uninit_str: Uninit<str> = uninit!([u8; 11]);
+/// let owned_str = uninit_str.write(init::incremental(|init: &mut str| {
+///     match &*init {
+///         "" => "Hello",
+///         s => if s.len() <= 5 {
+///             init.make_ascii_uppercase();
+///             " "
+///         } else {
+///             "world!"
+///         },
+///     }
+/// }));
+/// // The "!" is truncated because the total length is only 11 bytes.
+/// assert_eq!(&*owned_str, "HELLO world");
+/// ```
+#[inline]
+pub const fn incremental<A: ?Sized, T, F>(f: F) -> Incremental<F, A, T>
+where
+    F: FnMut(&mut A) -> T,
+{
+    Incremental(f, PhantomData)
 }
