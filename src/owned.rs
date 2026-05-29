@@ -520,10 +520,14 @@ impl<'a, F: ?Sized + Future + Unpin> Future for Own<'a, F> {
     }
 }
 
+/// # Safety
+///
+/// The resulting `Box<T>` must must outlive the place with which it is
+/// associated.
 #[cfg(feature = "alloc")]
 #[allow(dead_code)]
 #[inline]
-fn into_undrop_box<T: ?Sized>(own: Own<'_, T>) -> Box<T, impl Allocator> {
+unsafe fn into_undrop_box<T: ?Sized>(own: Own<'_, T>) -> Box<T, impl Allocator> {
     use core::alloc::{AllocError, Allocator, Layout};
 
     let inner = own.inner;

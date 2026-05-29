@@ -34,6 +34,8 @@ use core::{
 
 use crate::{owned::Own, place::Place, uninit::Uninit};
 
+mod slice;
+
 /// A slot that holds and manages the lifetime of a pinned owned value.
 ///
 /// `DroppingSlot` is a container that ensures pinned values are properly

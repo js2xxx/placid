@@ -134,7 +134,6 @@ at your option.
 
 - [`moveit`](https://crates.io/crates/moveit)
 - [`pin-init`](https://crates.io/crates/pin-init)
-- [The Algebra of Loans in Rust | 
-Nadri's musings](https://nadrieril.github.io/blog/2025/12/21/the-algebra-of-loans-in-rust.html)
+- [The Algebra of Loans in Rust | Nadri's musings](https://nadrieril.github.io/blog/2025/12/21/the-algebra-of-loans-in-rust.html)
 - [What is a place expression?](https://www.ralfj.de/blog/2024/08/14/places.html)
 - The Rust official documentations

@@ -7,7 +7,9 @@ impl<'a, Args: Tuple, F: FnOnce<Args> + ?Sized> FnOnce<Args> for Own<'a, F> {
 
     #[inline]
     extern "rust-call" fn call_once(self, args: Args) -> Self::Output {
-        (*into_undrop_box(self)).call_once(args)
+        // SAFETY: `Box` is dropped before the end of the function, so it cannot outlive
+        // the place with which it is associated.
+        (*unsafe { into_undrop_box(self) }).call_once(args)
     }
 }
 

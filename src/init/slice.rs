@@ -1,6 +1,7 @@
 use core::{
     clone::TrivialClone,
     convert::Infallible,
+    marker::PhantomData,
     mem::{self, MaybeUninit},
     ptr,
 };
@@ -22,7 +23,7 @@ fn maybe_uninit_slice<T, const N: usize>(m: &mut MaybeUninit<[T; N]>) -> &mut [M
 /// This structure is returned from slice initializers when the source and
 /// target slices have mismatched lengths.
 #[derive(Debug, thiserror::Error, Clone, Copy, PartialEq)]
-#[error("slice initialization error")]
+#[error("slice length mismatch")]
 pub struct SliceError;
 
 trait SpecInitSlice<T> {
@@ -427,4 +428,210 @@ where
     F: Fn(usize) -> T,
 {
     RepeatWith(f)
+}
+
+/// Initializes a slice by consuming an iterator.
+///
+/// This initializer is created by the [`from_iter()`] factory function.
+#[derive(Debug, PartialEq)]
+pub struct FromIter<I, T>(I, PhantomData<T>);
+
+/// The error type for `FromIter` initialization failures.
+#[derive(Debug, thiserror::Error)]
+#[error("iterator initialization failed")]
+pub struct FromIterError(());
+
+impl<I, T> Initializer for FromIter<I, T> {
+    type Error = FromIterError;
+}
+
+/// # Safety
+///
+/// `ptr` must point to a valid memory location that can hold `N` elements of
+/// type `T`.
+unsafe fn collect_iter<T, I>(ptr: *mut [T], iter: I) -> Result<(), FromIterError>
+where
+    I: IntoIterator<Item = T>,
+{
+    struct Guard<T> {
+        ptr: *mut [T],
+        initialized: usize,
+    }
+
+    impl<T> Guard<T> {
+        fn write(&mut self, element: T) {
+            debug_assert!(self.initialized < self.ptr.len());
+            unsafe {
+                let dst = self.ptr.cast::<T>().add(self.initialized);
+                dst.write(element);
+                self.initialized += 1;
+            }
+        }
+    }
+
+    impl<T> Drop for Guard<T> {
+        fn drop(&mut self) {
+            unsafe {
+                let init = ptr::slice_from_raw_parts_mut(self.ptr.cast::<T>(), self.initialized);
+                ptr::drop_in_place(init);
+            }
+        }
+    }
+
+    let mut iter = iter.into_iter();
+    let mut writer = Guard { ptr, initialized: 0 };
+
+    for _ in 0..writer.ptr.len() {
+        let element = iter.next().ok_or(FromIterError(()))?;
+        writer.write(element);
+    }
+
+    Ok(())
+}
+
+unsafe fn concat_str<'a>(
+    ptr: *mut str,
+    iter: impl IntoIterator<Item = &'a str>,
+) -> Result<(), FromIterError> {
+    let mut dst = ptr.cast::<u8>();
+    let mut remaining = unsafe { core::mem::transmute::<*mut str, *mut [u8]>(ptr) }.len();
+
+    for s in iter {
+        let bytes = s.as_bytes();
+        let len = remaining.min(bytes.len());
+
+        // Checks if `len` is a valid code point boundary.
+        if !s.is_char_boundary(len) {
+            return Err(FromIterError(()));
+        }
+
+        unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), dst, len) };
+        dst = unsafe { dst.add(len) };
+        remaining -= len;
+
+        if remaining == 0 {
+            return Ok(());
+        }
+    }
+
+    Err(FromIterError(()))
+}
+
+unsafe fn collect_chars(
+    ptr: *mut str,
+    iter: impl IntoIterator<Item = char>,
+) -> Result<(), FromIterError> {
+    let mut dst = ptr.cast::<u8>();
+    let mut remaining = unsafe { core::mem::transmute::<*mut str, *mut [u8]>(ptr) }.len();
+
+    for c in iter {
+        if remaining < c.len_utf8() {
+            return Err(FromIterError(()));
+        }
+
+        let mut buf = [0; 4];
+        let bytes = c.encode_utf8(&mut buf).as_bytes();
+
+        unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), dst, bytes.len()) };
+        dst = unsafe { dst.add(bytes.len()) };
+        remaining -= bytes.len();
+
+        if remaining == 0 {
+            return Ok(());
+        }
+    }
+
+    Err(FromIterError(()))
+}
+
+macro_rules! derive_from_iter {
+    ($($(@[$($g:tt)*]:)? $item:ty => $ty:ty = $imp:ident),* $(,)?) => {$(
+        impl<$($($g)*,)? __I> InitPin<$ty> for FromIter<__I, $item>
+        where
+            __I: IntoIterator<Item = $item>,
+        {
+            fn init_pin<'a, 'b>(
+                self,
+                mut place: Uninit<'a, $ty>,
+                slot: DropSlot<'a, 'b, $ty>,
+            ) -> InitPinResult<'a, 'b, $ty, FromIterError> {
+                match unsafe { $imp(place.as_mut_ptr(), self.0) } {
+                    Ok(()) => Ok(unsafe { place.assume_init_pin(slot) }),
+                    Err(err) => Err(InitError { error: err, place }.into_pin(slot)),
+                }
+            }
+        }
+
+        impl<$($($g)*,)? __I> Init<$ty> for FromIter<__I, $item>
+        where
+            __I: IntoIterator<Item = $item>,
+        {
+            fn init(self, mut place: Uninit<'_, $ty>) -> InitResult<'_, $ty, FromIterError> {
+                match unsafe { $imp(place.as_mut_ptr(), self.0) } {
+                    Ok(()) => Ok(unsafe { place.assume_init() }),
+                    Err(err) => Err(InitError { error: err, place }),
+                }
+            }
+        }
+    )*};
+}
+
+derive_from_iter! {
+    @[T]:                 T => [T]    = collect_iter,
+    @[T, const N: usize]: T => [T; N] = collect_iter,
+
+    @['t]: &'t str => str = concat_str,
+              char => str = collect_chars,
+}
+
+/// Initializes a slice/str by collecting an iterator.
+///
+/// Unlike [`Extend`] and [`Iterator::collect_into`], which don't require all
+/// the spare capacity to be filled, this initializer requires the iterator to
+/// produce items enough to fill the entire target place. This behavior is
+/// consistent with other slice initializers such as [`repeat`].
+///
+/// The source iterator will only be driven until the target place is fully
+/// initialized. If it [references to] another longer iterator, the remaining
+/// items will not be drained.
+///
+/// # Errors
+///
+/// The initialization fails if:
+///
+/// - The iterator produces fewer items than the length of the place, and;
+/// - For `str` initialization, the target length is not a valid UTF-8 boundary
+///   in the concatenated string.
+///
+/// Upon error, any elements that have already been initialized are properly
+/// dropped to prevent memory leaks.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::prelude::*;
+///
+/// let source = (1..).map(|x| x * 2);
+/// let mut uninit = uninit!([i32; 5]);
+/// let owned = uninit.write(init::from_iter(source));
+/// assert_eq!(&*owned, &[2, 4, 6, 8, 10]);
+///
+/// let chars = ['H', 'e', 'l', 'l', 'o'];
+/// let mut uninit_str: Uninit<str> = uninit!([u8; 5]);
+/// let owned_str = uninit_str.write(init::from_iter(chars));
+/// assert_eq!(&*owned_str, "Hello");
+///
+/// let failing_chars = ['P', '💣'];
+/// let mut uninit_str: Uninit<str> = uninit!([u8; 3]);
+/// // Fails because '💣' is 4 bytes and doesn't fit in the remaining space
+/// uninit_str.try_write(init::from_iter(failing_chars)).unwrap_err();
+/// ```
+///
+/// [references to]: Iterator::by_ref
+#[inline]
+pub const fn from_iter<I, T>(iter: I) -> FromIter<I, T>
+where
+    I: IntoIterator<Item = T>,
+{
+    FromIter(iter, PhantomData)
 }

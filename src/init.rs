@@ -503,7 +503,8 @@ pub use self::raw::{Raw, RawPin, TryRaw, TryRawPin, raw, raw_pin, try_raw, try_r
 
 mod slice;
 pub use self::slice::{
-    Repeat, RepeatWith, Slice, SliceError, Str, repeat, repeat_with, slice, str,
+    FromIter, FromIterError, Repeat, RepeatWith, Slice, SliceError, Str, from_iter, repeat,
+    repeat_with, slice, str,
 };
 
 mod value;

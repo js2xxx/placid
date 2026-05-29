@@ -266,6 +266,7 @@
 #![feature(allow_internal_unstable)]
 #![feature(derive_coerce_pointee)]
 #![feature(dropck_eyepatch)]
+#![feature(exact_div)]
 #![feature(maybe_uninit_fill)]
 #![feature(min_specialization)]
 #![feature(ptr_metadata)]
