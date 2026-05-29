@@ -1,7 +1,7 @@
 use std::mem;
 
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
+use quote::{format_ident, quote, quote_spanned};
 use syn::{Attribute, Expr, ExprCall, ExprPath, Meta, Type, visit_mut::VisitMut};
 
 fn char_has_case(c: char) -> bool {
@@ -168,6 +168,7 @@ impl VisitMut for InitVisit {
                 let mut builder_segment = Vec::new();
                 for field in &mut ctor.fields {
                     let member = &field.member;
+                    let set_member = format_ident!("__set_{}", member);
                     let expr = &mut field.expr;
 
                     let attrs = self.scan_attribute(&mut field.attrs, true);
@@ -175,14 +176,14 @@ impl VisitMut for InitVisit {
 
                     builder_segment.push(if self.err_ty.is_some() {
                         quote_spanned! { span =>
-                            let builder = match builder.#member(#expr) {
+                            let builder = match builder.#set_member(#expr) {
                                 Ok(v) => v,
                                 Err(err) => return Err(err.map(Into::into)),
                             };
                         }
                     } else {
                         quote_spanned! { span =>
-                            let builder = match builder.#member(#expr) {
+                            let builder = match builder.#set_member(#expr) {
                                 Ok(v) => v,
                                 Err(err) => return Err(err),
                             };
@@ -207,7 +208,7 @@ impl VisitMut for InitVisit {
                     use ::placid::init::StructuralInitPin;
                     let builder = #path::__builder_init_pin(uninit, slot);
                     #(#builder_segment)*
-                    Ok(builder.build())
+                    Ok(builder.__build())
                 })
             }
         } else {
@@ -217,7 +218,7 @@ impl VisitMut for InitVisit {
                     use ::placid::init::StructuralInit;
                     let builder = #path::__builder_init(uninit);
                     #(#builder_segment)*
-                    Ok(builder.build())
+                    Ok(builder.__build())
                 })
             }
         };

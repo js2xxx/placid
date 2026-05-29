@@ -72,7 +72,7 @@ macro_rules! derive_value_wrapper {
         impl<'a, T: ?Sized> $unpin<'a, T, true> {
             #[inline]
             #[doc(hidden)]
-            pub fn build(self) -> Own<'a, $ty<T>> {
+            pub fn __build(self) -> Own<'a, $ty<T>> {
                 let this = mem::ManuallyDrop::new(self);
                 unsafe {
                     let uninit = core::ptr::read(&this.uninit);
@@ -159,7 +159,7 @@ macro_rules! derive_value_wrapper {
         impl<'a, 'b, T: ?Sized> $pin<'a, 'b, T, true> {
             #[inline]
             #[doc(hidden)]
-            pub fn build(self) -> POwn<'b, $ty<T>> {
+            pub fn __build(self) -> POwn<'b, $ty<T>> {
                 let this = mem::ManuallyDrop::new(self);
                 unsafe {
                     let uninit = core::ptr::read(&this.uninit);
@@ -203,7 +203,7 @@ pub struct InitPhantomPinned<'a> {
 impl<'a> InitPhantomPinned<'a> {
     #[inline]
     #[doc(hidden)]
-    pub fn build(self) -> Own<'a, PhantomPinned> {
+    pub fn __build(self) -> Own<'a, PhantomPinned> {
         unsafe { self.uninit.assume_init() }
     }
 }
@@ -225,7 +225,7 @@ pub struct InitPinPhantomPinned<'a, 'b> {
 impl<'a, 'b> InitPinPhantomPinned<'a, 'b> {
     #[inline]
     #[doc(hidden)]
-    pub fn build(self) -> POwn<'b, PhantomPinned> {
+    pub fn __build(self) -> POwn<'b, PhantomPinned> {
         unsafe { self.uninit.assume_init_pin(self.slot) }
     }
 }

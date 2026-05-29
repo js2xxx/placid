@@ -4,6 +4,11 @@
 //! abstractions for initializing uninitialized memory places. It also includes
 //! various initializers and combinators for building complex initialization
 //! patterns.
+//!
+//! For structural initialization, the [`macro@Init`] and [`macro@InitPin`] can
+//! be derived for user-defined types, which in turn implements the
+//! [`StructuralInit`] and [`StructuralInitPin`] traits, enabling
+//! ergonomic syntax for initializing complex data structures.
 
 use core::{convert::Infallible, fmt, pin::Pin};
 
@@ -525,7 +530,14 @@ mod imp;
 /// Users should not implement this trait manually. It is intended to be
 /// automatically derived to ensure correct behavior.
 ///
+/// This trait is also implemented for several standard library types, such as
+/// [`Cell`], [`UnsafeCell`], [`ManuallyDrop`], and [`PhantomPinned`].
+///
 /// [`InitPin`]: macro@InitPin
+/// [`Cell`]: core::cell::Cell
+/// [`UnsafeCell`]: core::cell::UnsafeCell
+/// [`ManuallyDrop`]: core::mem::ManuallyDrop
+/// [`PhantomPinned`]: core::marker::PhantomPinned
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be structurally pin-initialized",
     label = "`{Self}` cannot be structurally pin-initialized",
@@ -552,7 +564,17 @@ pub trait StructuralInitPin<'b> {
 /// provides a method to structurally initialize the type in a non-pinned
 /// context.
 ///
+/// Users should not implement this trait manually. It is intended to be
+/// automatically derived to ensure correct behavior.
+///
+/// This trait is also implemented for several standard library types, such as
+/// [`Cell`], [`UnsafeCell`], [`ManuallyDrop`], and [`PhantomPinned`].
+///
 /// [`Init`]: macro@Init
+/// [`Cell`]: core::cell::Cell
+/// [`UnsafeCell`]: core::cell::UnsafeCell
+/// [`ManuallyDrop`]: core::mem::ManuallyDrop
+/// [`PhantomPinned`]: core::marker::PhantomPinned
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be structurally initialized",
     label = "`{Self}` cannot be structurally initialized",
@@ -700,7 +722,7 @@ pub use placid_macro::InitPin;
 /// For more complex usage, see the [crate-level documentation](crate) for more
 /// information.
 ///
-/// [structurally initialized]: macro@crate::Init
+/// [structurally initialized]: macro@Init
 pub use placid_macro::init;
 /// Creates a pin-initializer for a [structurally pin-initialized] type.
 ///
@@ -757,5 +779,5 @@ pub use placid_macro::init;
 /// For more complex usage, see the [crate-level documentation](crate) for more
 /// information.
 ///
-/// [structurally pin-initialized]: macro@crate::InitPin
+/// [structurally pin-initialized]: macro@InitPin
 pub use placid_macro::init_pin;

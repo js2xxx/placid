@@ -355,7 +355,7 @@ impl_fwd!(impl<'a> T {
     /// # Panics
     ///
     /// Panics if `mid > len`. For a non-panicking version, see
-    /// [`split_at_checked`](Own::split_at_checked).
+    /// [`split_at_checked`](PlaceRef::split_at_checked).
     ///
     /// # Examples
     ///

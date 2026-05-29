@@ -270,7 +270,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
                     true,
                     #(#typestate_name_after,)*
                 },
-                quote_spanned! { mixed_site => #field_name_cur },
+                format_ident!("__set_{}", field_name_cur, span = mixed_site).to_token_stream(),
             )
         } else {
             let next = i + 1;
@@ -504,7 +504,7 @@ fn derive(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenStream,
             > #where_clause {
                 #[inline]
                 #[doc(hidden)]
-                pub fn build(self) -> #result_ty {
+                pub fn __build(self) -> #result_ty {
                     let mut this = ::core::mem::ManuallyDrop::new(self);
                     // SAFETY: All fields have been initialized.
                     unsafe { #assume_init }
