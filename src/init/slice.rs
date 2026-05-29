@@ -579,6 +579,7 @@ where
         let next = f(guard.initialized());
         guard.write(next);
     }
+    mem::forget(guard);
 }
 
 #[inline]
@@ -714,14 +715,14 @@ derive_incremental! {
 /// ```rust
 /// use placid::prelude::*;
 ///
-/// let mut uninit = uninit!([i32; 5]);
-/// let owned = uninit.write(init::incremental(|init: &mut [i32]| {
+/// let mut uninit = uninit!([Box<i32>; 5]);
+/// let owned = uninit.write(init::incremental(|init: &mut [Box<i32>]| {
 ///     match init {
-///         [] => 1,
-///         [.., last] => *last * 2,
+///         [] => Box::new(1),
+///         [.., last] => Box::new(**last * 2),
 ///     }
 /// }));
-/// assert_eq!(&*owned, &[1, 2, 4, 8, 16]);
+/// assert!(owned.iter().map(|x| **x).eq([1, 2, 4, 8, 16]));
 ///
 /// let mut uninit_str: Uninit<str> = uninit!([u8; 11]);
 /// let owned_str = uninit_str.write(init::incremental(|init: &mut str| {
