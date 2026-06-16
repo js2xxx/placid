@@ -2,7 +2,10 @@ use std::mem;
 
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned};
-use syn::{Attribute, Expr, ExprCall, ExprPath, Meta, Type, visit_mut::VisitMut};
+use syn::{
+    Attribute, Block, Expr, ExprCall, ExprPath, Meta, Pat, PatIdent, Stmt, Type, parse_quote,
+    visit_mut::VisitMut,
+};
 
 fn char_has_case(c: char) -> bool {
     let l = c.to_lowercase();
@@ -48,9 +51,25 @@ fn possible_struct_call(call: &ExprCall) -> bool {
     }
 }
 
+fn possible_trailing_block(block: &Block) -> bool {
+    matches!(block.stmts.last(), Some(Stmt::Expr(e, None)) if possible_initializer(e))
+}
+
+fn possible_initializer(e: &Expr) -> bool {
+    match e {
+        Expr::Path(path) => possible_struct_name(path),
+        Expr::Call(call) => possible_struct_call(call),
+        Expr::Struct(_) => true,
+        Expr::Block(b) => possible_trailing_block(&b.block),
+        _ => false,
+    }
+}
+
 #[derive(Default)]
 struct InitVisit {
     pinned: bool,
+    this_ptr: Option<PatIdent>,
+    pre_stmts: Vec<Stmt>,
     err_ty: Option<Option<Type>>,
     err: Option<syn::Error>,
 }
@@ -109,11 +128,15 @@ impl InitVisit {
     ) {
         let old_err = mem::replace(&mut self.err_ty, err_ty);
         let old_pinned = pinned.map(|pinned| mem::replace(&mut self.pinned, pinned));
+        let old_this_ptr = self.this_ptr.take();
+        let old_pre_stmts = mem::take(&mut self.pre_stmts);
         self.visit_expr_mut(expr);
         if let Some(old_pinned) = old_pinned {
             self.pinned = old_pinned;
         }
         self.err_ty = old_err;
+        self.this_ptr = old_this_ptr;
+        self.pre_stmts = old_pre_stmts;
     }
 
     fn visit_root_expr_mut(&mut self, expr: &mut Expr, scan_pin: bool) {
@@ -192,6 +215,31 @@ impl VisitMut for InitVisit {
                 }
                 (quote!(#path), mem::take(&mut ctor.attrs), builder_segment)
             }
+            Expr::Block(block) if possible_trailing_block(&block.block) => {
+                if let [prev @ .., Stmt::Expr(last, None)] = &mut block.block.stmts[..] {
+                    self.pre_stmts.extend_from_slice(prev);
+                    self.visit_expr_mut(last);
+                    if self.err.is_none() {
+                        *expr = mem::replace(last, parse_quote!(()));
+                    }
+                }
+                return;
+            }
+            Expr::Closure(closure)
+                if possible_initializer(&closure.body)
+                    && let Some(Some(tp)) =
+                        closure.inputs.iter().try_fold(None, |acc, i| match acc {
+                            None if let Pat::Ident(input) = i => Some(Some(input.clone())),
+                            _ => None,
+                        }) =>
+            {
+                self.this_ptr = Some(tp);
+                self.visit_expr_mut(&mut closure.body);
+                if self.err.is_none() {
+                    *expr = mem::replace(&mut closure.body, parse_quote!(()));
+                }
+                return;
+            }
             _ => return,
         };
 
@@ -201,10 +249,16 @@ impl VisitMut for InitVisit {
             quote_spanned! { span => ::<_, _, _> }
         };
 
+        let this_ptr = self.this_ptr.iter();
+        let pre_stmts = self.pre_stmts.iter();
+
         *expr = if self.pinned {
             syn::parse_quote_spanned! { span =>
                 #(#attrs)*
-                ::placid::init::try_raw_pin #generics(move |uninit, slot| {
+                ::placid::init::try_raw_pin #generics(move |mut uninit, slot| {
+                    #(let #this_ptr = ::placid::uninit::Uninit::as_non_null(&mut uninit);)*
+                    #(#pre_stmts)*
+
                     use ::placid::init::StructuralInitPin;
                     let builder = #path::__builder_init_pin(uninit, slot);
                     #(#builder_segment)*
@@ -214,7 +268,10 @@ impl VisitMut for InitVisit {
         } else {
             syn::parse_quote_spanned! { span =>
                 #(#attrs)*
-                ::placid::init::try_raw #generics(move |uninit| {
+                ::placid::init::try_raw #generics(move |mut uninit| {
+                    #(let #this_ptr = ::placid::uninit::Uninit::as_non_null(&mut uninit);)*
+                    #(#pre_stmts)*
+
                     use ::placid::init::StructuralInit;
                     let builder = #path::__builder_init(uninit);
                     #(#builder_segment)*

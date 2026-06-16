@@ -221,6 +221,27 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
         self.inner.as_ptr()
     }
 
+    /// Returns a raw non-null pointer to the uninitialized value inside the
+    /// reference.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let mut uninit: Uninit<i32> = uninit!();
+    /// let ptr = uninit.as_non_null();
+    /// unsafe {
+    ///     ptr.write(42);
+    ///     // Now the value at ptr is initialized to 42
+    ///     assert_eq!(*uninit.assume_init(), 42);
+    /// }
+    /// ```
+    #[inline]
+    pub const fn as_non_null(&mut self) -> NonNull<T> {
+        self.inner
+    }
+
     /// Creates a new uninitialized reference that shares the same underlying
     /// memory, borrowing the original lifetime.
     #[inline]
