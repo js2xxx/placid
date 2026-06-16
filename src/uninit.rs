@@ -4,6 +4,8 @@
 
 use core::{
     fmt,
+    iter::FusedIterator,
+    marker::PhantomData,
     mem::{self, MaybeUninit},
     ops::{Deref, DerefMut},
     ptr::NonNull,
@@ -217,6 +219,15 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     #[inline]
     pub const fn as_mut_ptr(&mut self) -> *mut T {
         self.inner.as_ptr()
+    }
+
+    /// Creates a new uninitialized reference that shares the same underlying
+    /// memory, borrowing the original lifetime.
+    #[inline]
+    pub const fn by_ref(&mut self) -> Uninit<'_, T> {
+        // SAFETY: We are creating a new uninitialized reference that shares the same
+        // underlying memory, which is valid for the original lifetime.
+        unsafe { Uninit::from_raw(self.as_mut_ptr()) }
     }
 
     /// Assumes that the reference is initialized and converts it into an owned
@@ -458,3 +469,112 @@ impl<'a, T, const N: usize> Uninit<'a, [T; N]> {
         (self as Uninit<'a, [T]>).write_iter(iter)
     }
 }
+
+impl<'a, T> IntoIterator for Uninit<'a, [T]> {
+    type Item = Uninit<'a, T>;
+    type IntoIter = IntoIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let len = self.len();
+        let start = self.inner.cast::<T>();
+        let end = unsafe { NonNull::new_unchecked(start.as_ptr().add(len)) };
+        mem::forget(self);
+        IntoIter { start, end, _marker: PhantomData }
+    }
+}
+
+impl<'a, T, const N: usize> IntoIterator for Uninit<'a, [T; N]> {
+    type Item = Uninit<'a, T>;
+    type IntoIter = IntoIter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (self as Uninit<'a, [T]>).into_iter()
+    }
+}
+
+/// An iterator that yields uninitialized references to the elements of a slice,
+/// consuming the original `Uninit` reference.
+pub struct IntoIter<'a, T> {
+    start: NonNull<T>,
+    end: NonNull<T>,
+    _marker: PhantomData<&'a mut MaybeUninit<PhantomData<[T]>>>,
+}
+
+impl<'a, T> Iterator for IntoIter<'a, T> {
+    type Item = Uninit<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start == self.end {
+            None
+        } else {
+            // SAFETY: We are creating an uninitialized reference from a valid pointer.
+            let uninit = unsafe { Uninit::from_raw(self.start.as_ptr()) };
+            // SAFETY: We are advancing the pointer by one element, which is valid for the
+            // original slice.
+            unsafe { self.start = NonNull::new_unchecked(self.start.as_ptr().add(1)) };
+            Some(uninit)
+        }
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let remaining = unsafe { self.end.offset_from_unsigned(self.start) };
+        if n >= remaining {
+            self.start = self.end;
+            None
+        } else {
+            // SAFETY: We are creating an uninitialized reference from a valid pointer.
+            let ptr = unsafe { self.start.as_ptr().add(n) };
+            // SAFETY: We are creating an uninitialized reference from a valid pointer.
+            let uninit = unsafe { Uninit::from_raw(ptr) };
+            // SAFETY: We are advancing the pointer by `n + 1` elements, which is valid for
+            // the original slice.
+            unsafe { self.start = NonNull::new_unchecked(ptr.add(1)) };
+            Some(uninit)
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // SAFETY: We are calculating the length based on the original slice, which is
+        // valid for the original slice.
+        let len = unsafe { self.end.offset_from_unsigned(self.start) };
+        (len, Some(len))
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for IntoIter<'a, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.start == self.end {
+            None
+        } else {
+            // SAFETY: We are creating an uninitialized reference from a valid pointer.
+            let ptr = unsafe { self.end.as_ptr().sub(1) };
+            // SAFETY: We are creating an uninitialized reference from a valid pointer.
+            let uninit = unsafe { Uninit::from_raw(ptr) };
+            // SAFETY: We are moving the pointer back by one element, which is valid for the
+            // original slice.
+            unsafe { self.end = NonNull::new_unchecked(ptr) };
+            Some(uninit)
+        }
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        let remaining = unsafe { self.end.offset_from_unsigned(self.start) };
+        if n >= remaining {
+            self.end = self.start;
+            None
+        } else {
+            // SAFETY: We are creating an uninitialized reference from a valid pointer.
+            let ptr = unsafe { self.end.as_ptr().sub(n + 1) };
+            // SAFETY: We are creating an uninitialized reference from a valid pointer.
+            let uninit = unsafe { Uninit::from_raw(ptr) };
+            // SAFETY: We are moving the pointer back by `n + 1` elements, which is valid
+            // for the original slice.
+            unsafe { self.end = NonNull::new_unchecked(ptr) };
+            Some(uninit)
+        }
+    }
+}
+
+impl<'a, T> ExactSizeIterator for IntoIter<'a, T> {}
+
+impl<'a, T> FusedIterator for IntoIter<'a, T> {}

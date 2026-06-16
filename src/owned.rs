@@ -24,6 +24,8 @@ use core::{
     error::Error,
     fmt,
     hash::{Hash, Hasher},
+    iter::FusedIterator,
+    marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
     pin::Pin,
@@ -587,10 +589,163 @@ impl<'a, I: ?Sized + Iterator> Iterator for Own<'a, I> {
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
         (**self).nth(n)
     }
+
+    #[cfg(feature = "alloc")]
+    #[inline]
+    fn last(self) -> Option<Self::Item> {
+        // SAFETY: `Box` is dropped before the end of the function, so it cannot outlive
+        // the place with which it is associated.
+        unsafe { into_undrop_box(self) }.last()
+    }
 }
+
+impl<'a, I: ?Sized + DoubleEndedIterator> DoubleEndedIterator for Own<'a, I> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        (**self).next_back()
+    }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        (**self).nth_back(n)
+    }
+}
+
+impl<'a, I: ?Sized + ExactSizeIterator> ExactSizeIterator for Own<'a, I> {
+    #[inline]
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+}
+
+impl<'a, I: ?Sized + FusedIterator> FusedIterator for Own<'a, I> {}
 
 #[cfg(feature = "fn-impl")]
 mod fn_impl;
+
+impl<'a, T> Own<'a, [T]> {
+    /// Creates an iterator that moves items out of the owned slice.
+    ///
+    /// The method is standalone instead of implementing `IntoIterator` to avoid
+    /// conflicts with the blanket implementation of `IntoIterator` for `&[T]`
+    /// and `&mut [T]`.
+    #[inline]
+    pub const fn into_iter(self) -> IntoIter<'a, T> {
+        let len = self.len();
+        let start = self.inner.cast::<T>();
+        let end = unsafe { NonNull::new_unchecked(start.as_ptr().add(len)) };
+        mem::forget(self);
+        IntoIter { start, end, _marker: PhantomData }
+    }
+}
+
+impl<'a, T, const N: usize> Own<'a, [T; N]> {
+    /// Creates an iterator that moves items out of the owned array.
+    ///
+    /// The method is standalone instead of implementing `IntoIterator` to avoid
+    /// conflicts with the blanket implementation of `IntoIterator` for `&[T;
+    /// N]` and `&mut [T; N]`.
+    #[inline]
+    pub const fn into_iter(self) -> IntoIter<'a, T> {
+        (self as Own<'a, [T]>).into_iter()
+    }
+}
+
+/// An iterator that moves items out of an owned slice.
+pub struct IntoIter<'a, T> {
+    start: NonNull<T>,
+    end: NonNull<T>,
+    _marker: PhantomData<&'a mut MaybeUninit<PhantomData<[T]>>>,
+}
+
+impl<'a, T> Drop for IntoIter<'a, T> {
+    fn drop(&mut self) {
+        // SAFETY: We are dropping the remaining items in the original slice, which is
+        // valid for the original slice.
+        unsafe {
+            let len = self.end.offset_from_unsigned(self.start);
+            let ptr = NonNull::slice_from_raw_parts(self.start, len);
+            ptr.drop_in_place();
+        }
+    }
+}
+
+impl<'a, T> Iterator for IntoIter<'a, T> {
+    type Item = Own<'a, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start == self.end {
+            None
+        } else {
+            // SAFETY: We are creating an owned reference from a valid pointer.
+            let ret = unsafe { Own::from_raw(self.start.as_ptr()) };
+            // SAFETY: We are advancing the pointer by one element, which is valid for the
+            // original slice.
+            unsafe { self.start = NonNull::new_unchecked(self.start.as_ptr().add(1)) };
+            Some(ret)
+        }
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        let remaining = unsafe { self.end.offset_from_unsigned(self.start) };
+        if n >= remaining {
+            self.start = self.end;
+            None
+        } else {
+            // SAFETY: We are creating an owned reference from a valid pointer.
+            let ptr = unsafe { self.start.as_ptr().add(n) };
+            // SAFETY: We are creating an owned reference from a valid pointer.
+            let ret = unsafe { Own::from_raw(ptr) };
+            // SAFETY: We are advancing the pointer by `n + 1` elements, which is valid for
+            // the original slice.
+            unsafe { self.start = NonNull::new_unchecked(ptr.add(1)) };
+            Some(ret)
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        // SAFETY: We are calculating the length based on the original slice, which is
+        // valid for the original slice.
+        let len = unsafe { self.end.offset_from_unsigned(self.start) };
+        (len, Some(len))
+    }
+}
+
+impl<'a, T> DoubleEndedIterator for IntoIter<'a, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.start == self.end {
+            None
+        } else {
+            // SAFETY: We are creating an owned reference from a valid pointer.
+            let ret = unsafe { Own::from_raw(self.end.as_ptr().sub(1)) };
+            // SAFETY: We are moving the end pointer back by one element, which is valid for
+            // the original slice.
+            unsafe { self.end = NonNull::new_unchecked(self.end.as_ptr().sub(1)) };
+            Some(ret)
+        }
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        let remaining = unsafe { self.end.offset_from_unsigned(self.start) };
+        if n >= remaining {
+            self.end = self.start;
+            None
+        } else {
+            // SAFETY: We are creating an owned reference from a valid pointer.
+            let ptr = unsafe { self.end.as_ptr().sub(n + 1) };
+            // SAFETY: We are creating an owned reference from a valid pointer.
+            let ret = unsafe { Own::from_raw(ptr) };
+            // SAFETY: We are moving the end pointer back by `n + 1` elements, which is
+            // valid for the original slice.
+            unsafe { self.end = NonNull::new_unchecked(ptr) };
+            Some(ret)
+        }
+    }
+}
+
+impl<'a, T> ExactSizeIterator for IntoIter<'a, T> {}
+
+impl<'a, T> FusedIterator for IntoIter<'a, T> {}
 
 /// A trait for types that can be converted into owned places.
 ///
@@ -722,6 +877,24 @@ macro_rules! into_own {
         super let mut p;
         $crate::into_own!(p <- $e)
     }};
+}
+
+impl<'a, T> Own<'a, Option<T>> {
+    /// Converts from `Own<Option<T>>` to `Option<Own<T>>`.
+    pub const fn as_own(self) -> Option<Own<'a, T>> {
+        if unsafe { self.inner.as_ref() }.is_some() {
+            let opt = Own::into_raw(self);
+            // SAFETY: We have checked that the option is `Some`, so we can safely take the
+            // value out.
+            let inner = unsafe { opt.byte_add(mem::offset_of!(Option<T>, Some.0)).cast::<T>() };
+            Some(unsafe { Own::from_raw(inner) })
+        } else {
+            // SAFETY: A `None` value does not contain any initialized data, so we can
+            // safely forget the owned reference without dropping anything.
+            mem::forget(self);
+            None
+        }
+    }
 }
 
 #[cfg(test)]

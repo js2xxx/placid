@@ -228,7 +228,7 @@ impl<T> DynPlace<T> {
     ///
     /// This is similar to [`Option::copied`].
     #[inline]
-    pub fn copied(&self) -> Option<T>
+    pub const fn copied(&self) -> Option<T>
     where
         T: Copy,
     {

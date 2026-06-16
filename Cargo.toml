@@ -38,6 +38,7 @@ fn-impl = ["alloc"]
 # Local crates
 placid-macro = {version = "=0.2.0", path = "macro"}
 # External crates
+munge = {version = "0.4.7"}
 thiserror = {version = "2.0", default-features = false}
 
 [dev-dependencies]

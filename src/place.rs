@@ -644,6 +644,26 @@ unsafe impl<'a, #[may_dangle] T: ?Sized, S: PlaceState> Drop for PlaceRef<'a, T,
     }
 }
 
+unsafe impl<'a, T: ?Sized, S: PlaceState> munge::Destructure for PlaceRef<'a, T, S> {
+    type Underlying = T;
+
+    type Destructuring = munge::Move;
+
+    fn underlying(&mut self) -> *mut Self::Underlying {
+        self.inner.as_ptr()
+    }
+}
+
+unsafe impl<'a, T: ?Sized, U: ?Sized + 'a, S: PlaceState> munge::Restructure<U>
+    for PlaceRef<'a, T, S>
+{
+    type Restructured = PlaceRef<'a, U, S>;
+
+    unsafe fn restructure(&self, ptr: *mut U) -> Self::Restructured {
+        unsafe { PlaceRef::from_inner(NonNull::new_unchecked(ptr)) }
+    }
+}
+
 #[cfg(test)]
 #[cfg(feature = "alloc")]
 mod tests {

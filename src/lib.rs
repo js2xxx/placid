@@ -269,6 +269,7 @@
 #![feature(exact_div)]
 #![feature(layout_for_ptr, clone_to_uninit)]
 #![feature(maybe_uninit_fill)]
+#![feature(offset_of_enum)]
 #![feature(ptr_metadata)]
 
 #[cfg(feature = "alloc")]

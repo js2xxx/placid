@@ -1,9 +1,4 @@
-use core::{
-    clone::CloneToUninit,
-    convert::Infallible,
-    mem::{self, size_of_val_raw},
-    ptr,
-};
+use core::{clone::CloneToUninit, convert::Infallible, mem::size_of_val_raw};
 
 use crate::{
     init::{
