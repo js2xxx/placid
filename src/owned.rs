@@ -21,6 +21,7 @@ use core::{alloc::Allocator, mem::MaybeUninit};
 use core::{
     any::Any,
     borrow::{Borrow, BorrowMut},
+    clone::CloneToUninit,
     error::Error,
     fmt,
     hash::{Hash, Hasher},
@@ -428,7 +429,7 @@ impl<'a, T: ?Sized> fmt::Pointer for Own<'a, T> {
     }
 }
 
-impl<'a, T: Clone> Own<'a, T> {
+impl<'a, T: ?Sized + CloneToUninit> Own<'a, T> {
     /// Clones the value inside the owned reference into another place.
     ///
     /// # Examples
@@ -441,7 +442,7 @@ impl<'a, T: Clone> Own<'a, T> {
     /// ```
     #[inline]
     pub fn clone<'b>(&self, to: &'b mut impl Place<T>) -> Own<'b, T> {
-        to.write(|| (**self).clone())
+        to.write(crate::init::clone(&**self))
     }
 }
 
