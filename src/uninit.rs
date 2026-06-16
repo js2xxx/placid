@@ -13,7 +13,7 @@ use core::{
 
 use crate::{
     init::{Init, InitPin, InitPinResult, InitResult, IntoInit, IntoInitPin},
-    owned::Own,
+    owned::{MoveToUninit, Own},
     pin::{DropSlot, POwn},
     place::{Place, PlaceRef, Uninitialized},
 };
@@ -395,6 +395,33 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
 impl<'a, T: ?Sized> fmt::Debug for Uninit<'a, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Uninit<{}>", core::any::type_name::<T>())
+    }
+}
+
+impl<'a, T: ?Sized + MoveToUninit> Uninit<'a, T> {
+    /// Constructs the value inside the uninitialized reference by moving it
+    /// from another owned reference.
+    ///
+    /// This method calls [`MoveToUninit::move_to_uninit`] (`T`'s custom move
+    /// constructor) to perform the move. See the documentation of that trait
+    /// for more details.
+    ///
+    /// This method is effectively a shorthand for
+    /// `self.write(init::move_(from))`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let owned = own!(String::from("Hello"));
+    /// let uninit = uninit!(String);
+    /// let moved = uninit.move_from(owned);
+    /// assert_eq!(&*moved, "Hello");
+    /// ```
+    #[inline]
+    pub fn move_from(self, from: Own<'_, T>) -> Own<'a, T> {
+        T::move_to_uninit(from, self)
     }
 }
 

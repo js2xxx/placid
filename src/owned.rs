@@ -40,6 +40,9 @@ use crate::{
     uninit::Uninit,
 };
 
+mod move_;
+pub use self::move_::{Move, MoveToUninit};
+
 /// An owned reference that contains a fully initialized value of type `T`.
 ///
 /// # Examples
@@ -304,8 +307,36 @@ impl<'a, T: ?Sized> Own<'a, T> {
     }
 }
 
-impl<'a, T> Own<'a, T> {
+impl<'a, T: ?Sized + MoveToUninit> Own<'a, T> {
+    /// Moves the value inside the owned reference into another place, leaving
+    /// the original place uninitialized.
+    ///
+    /// This method calls [`MoveToUninit::move_to_uninit`] (`T`'s custom move
+    /// constructor) to perform the move. See the documentation of that trait
+    /// for more details.
+    ///
+    /// This method is effectively a shorthand for
+    /// `to.write(init::move_(self))`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let my_place = own!(String::from("Hello"));
+    /// let uninit = uninit!(String);
+    /// let moved_place = my_place.move_to(uninit);
+    /// assert_eq!(&*moved_place, "Hello");
+    /// ```
+    #[inline]
+    pub fn move_to<'d>(self, to: Uninit<'d, T>) -> Own<'d, T> {
+        T::move_to_uninit(self, to)
+    }
+
     /// Takes the value out of the owned reference, leaving it uninitialized.
+    ///
+    /// This method asserts that the type `T` is trivially movable, meaning that
+    /// it can be safely moved out of the place byte-wise.
     ///
     /// # Examples
     ///
@@ -320,7 +351,16 @@ impl<'a, T> Own<'a, T> {
     /// assert_eq!(*my_place_again, 200);
     /// ```
     #[inline]
-    pub const fn take(this: Self) -> (T, Uninit<'a, T>) {
+    pub const fn take(this: Self) -> (T, Uninit<'a, T>)
+    where
+        T: Sized,
+    {
+        const {
+            assert!(
+                T::IS_TRIVIAL,
+                "only trivially movable types can be taken out of an owned reference"
+            )
+        };
         let inner = this.inner;
         mem::forget(this);
         // SAFETY: We have exclusive ownership of the value, so we can take it out.
@@ -330,6 +370,9 @@ impl<'a, T> Own<'a, T> {
     }
 
     /// Takes the value out of the owned reference.
+    ///
+    /// This method asserts that the type `T` is trivially movable, meaning that
+    /// it can be safely moved out of the place byte-wise.
     ///
     /// # Examples
     ///
@@ -341,7 +384,16 @@ impl<'a, T> Own<'a, T> {
     /// assert_eq!(value, 100);
     /// ```
     #[inline]
-    pub const fn into_inner(this: Self) -> T {
+    pub const fn into_inner(this: Self) -> T
+    where
+        T: Sized,
+    {
+        const {
+            assert!(
+                T::IS_TRIVIAL,
+                "only trivially movable types can be taken out of an owned reference"
+            )
+        };
         let inner = this.inner;
         mem::forget(this);
         // SAFETY: We have exclusive ownership of the value, so we can take it out.

@@ -1,12 +1,17 @@
-use std::{cell::Cell, marker::PhantomData};
+use std::{
+    cell::Cell,
+    marker::{PhantomData, PhantomPinned},
+};
 
 use placid::prelude::*;
 
-#[derive(InitPin)]
+#[derive(InitPin, Move)]
 struct TestStruct {
     a: u32,
     b: String,
 }
+
+const _: () = assert!(<TestStruct as placid::owned::MoveToUninit>::IS_TRIVIAL);
 
 #[test]
 fn test_build() {
@@ -59,7 +64,7 @@ fn test_drop() {
     assert!(DROPPED.get());
 }
 
-#[derive(Init)]
+#[derive(Init, Move)]
 pub struct GenericHygiene<Base, Ptr: core::fmt::Debug, Pin>
 where
     Pin: Send + Sync + 'static,
@@ -73,6 +78,8 @@ where
 struct Nested {
     #[pin]
     field: TestStruct,
+    #[pin]
+    phantom: PhantomPinned,
     unpinned: u64,
 }
 
@@ -84,6 +91,8 @@ fn test_nested() {
             a: 7,
             b: || String::from("Nested"),
         },
+        #[pin]
+        phantom: PhantomPinned,
         unpinned: 123,
     }));
     assert_eq!(pown.field.a, 7);

@@ -22,6 +22,7 @@
 
 use core::{
     cell::Cell,
+    clone::CloneToUninit,
     error::Error,
     fmt,
     hash::{Hash, Hasher},
@@ -427,7 +428,7 @@ impl<'a, T: ?Sized> fmt::Pointer for POwn<'a, T> {
     }
 }
 
-impl<'a, T: Clone> POwn<'a, T> {
+impl<'a, T: CloneToUninit> POwn<'a, T> {
     /// Clones the value inside the pinned owned reference into another place.
     ///
     /// This method creates a new owned reference by cloning the value from the
@@ -445,7 +446,7 @@ impl<'a, T: Clone> POwn<'a, T> {
     /// ```
     #[inline]
     pub fn clone<'p>(&self, to: &'p mut impl Place<T>) -> Own<'p, T> {
-        to.write(|| (**self).clone())
+        to.write(crate::init::clone(&**self))
     }
 }
 

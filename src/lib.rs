@@ -275,7 +275,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "std"))]
 extern crate std;
 
 pub mod place;
@@ -308,13 +308,16 @@ pub mod prelude {
     pub use crate::{
         init::{self, Init, InitPin, Initializer, IntoInit, IntoInitPin, init, init_pin},
         into_own, into_pown, own,
-        owned::{IntoOwn, Own},
+        owned::{IntoOwn, Move, Own},
         pin::POwn,
         place::{Place, construct::*},
         pown, uninit,
         uninit::Uninit,
     };
 }
+
+#[doc(hidden)]
+pub use munge;
 
 #[doc(hidden)]
 #[inline]

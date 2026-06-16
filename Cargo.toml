@@ -33,6 +33,7 @@ all-features = true
 alloc = []
 default = ["fn-impl"]
 fn-impl = ["alloc"]
+std = ["alloc"]
 
 [dependencies]
 # Local crates

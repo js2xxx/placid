@@ -4,6 +4,7 @@ use crate::{
     init::{
         Init, InitError, InitPin, InitPinError, InitPinResult, InitResult, Initializer, IntoInitPin,
     },
+    owned::{MoveToUninit, Own},
     pin::DropSlot,
     uninit::Uninit,
 };
@@ -283,7 +284,7 @@ pub struct ValueError;
 #[derive(Debug, PartialEq)]
 pub struct CloneInit<'a, T: ?Sized>(&'a T);
 
-impl<T: ?Sized> Initializer for CloneInit<'_, T> {
+impl<T: ?Sized + CloneToUninit> Initializer for CloneInit<'_, T> {
     type Error = ValueError;
 }
 
@@ -361,5 +362,86 @@ impl<'a, T: ?Sized + CloneToUninit> IntoInitPin<T, CloneInit<'a, T>> for &'a T {
     #[inline]
     fn into_init(self) -> Self::Init {
         CloneInit(self)
+    }
+}
+
+/// Creates an initializer that moves a value from an owned pointer.
+///
+/// This initializer is created by the [`move_()`] factory function.
+#[derive(Debug, PartialEq)]
+pub struct MoveInit<'a, T: ?Sized>(Own<'a, T>);
+
+impl<'a, T: ?Sized + MoveToUninit> Initializer for MoveInit<'a, T> {
+    type Error = ValueError;
+}
+
+impl<'a, T: ?Sized + MoveToUninit> InitPin<T> for MoveInit<'a, T> {
+    #[inline]
+    fn init_pin<'b, 'c>(
+        self,
+        mut place: Uninit<'b, T>,
+        slot: DropSlot<'b, 'c, T>,
+    ) -> InitPinResult<'b, 'c, T, ValueError> {
+        let src = self.0;
+        let dst = place.as_mut_ptr();
+
+        let size = size_of_val(&*src);
+        // SAFETY: The pointer metadata of `dst` is always valid since `Uninit<T>`
+        // points to a valid uninitialized memory for `T`.
+        if size != unsafe { size_of_val_raw(dst) } {
+            return Err(InitPinError::new(ValueError, place, slot));
+        }
+
+        let own = src.move_to(place);
+        Ok(Own::into_pin(own, slot))
+    }
+}
+
+impl<'a, T: ?Sized + MoveToUninit> Init<T> for MoveInit<'a, T> {
+    #[inline]
+    fn init(self, mut place: Uninit<'_, T>) -> InitResult<'_, T, ValueError> {
+        let src = self.0;
+        let dst = place.as_mut_ptr();
+
+        let size = size_of_val(&*src);
+        // SAFETY: The pointer metadata of `dst` is always valid since `Uninit<T>`
+        // points to a valid uninitialized memory for `T`.
+        if size != unsafe { size_of_val_raw(dst) } {
+            return Err(InitError::new(ValueError, place));
+        }
+
+        Ok(src.move_to(place))
+    }
+}
+
+/// Creates an initializer that moves a value from an owned pointer by invoking
+/// its custom move constructor.
+///
+/// The provided value is not necessarily [`Sized`], but the initializer will
+/// fail if the size of the value does not match the size of the destination
+/// place, which could only happen if unsized.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::prelude::*;
+///
+/// let owned = own!(String::from("hello"));
+/// let uninit: Uninit<String> = uninit!(String);
+/// let result = uninit.write(init::move_(owned));
+/// assert_eq!(*result, String::from("hello"));
+/// ```
+#[inline]
+pub const fn move_<T: ?Sized + MoveToUninit>(this: Own<'_, T>) -> MoveInit<'_, T> {
+    MoveInit(this)
+}
+
+impl<'a, T: ?Sized + MoveToUninit> IntoInitPin<T, MoveInit<'a, T>> for Own<'a, T> {
+    type Init = MoveInit<'a, T>;
+    type Error = ValueError;
+
+    #[inline]
+    fn into_init(self) -> Self::Init {
+        MoveInit(self)
     }
 }
