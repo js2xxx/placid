@@ -1,4 +1,9 @@
-use core::{mem, ptr::NonNull};
+use core::{
+    iter::FusedIterator,
+    marker::PhantomData,
+    mem::{self, MaybeUninit},
+    ptr::NonNull,
+};
 
 use crate::place::{PlaceRef, PlaceState};
 
@@ -524,5 +529,261 @@ impl<'a, T, const N: usize, const Q: usize, S: PlaceState> PlaceRef<'a, [[T; N];
     #[must_use]
     pub const fn flatten(self) -> PlaceRef<'a, [T], S> {
         self.to_slice().flatten()
+    }
+}
+
+/// An iterator that yields maybe-owned references to the elements of a slice,
+/// consuming the original slice reference.
+///
+/// # Examples
+///
+/// ```
+/// use placid::prelude::*;
+///
+/// let slice = own!([1, 2, 3]);
+/// let mut iter = slice.into_iter();
+/// assert_eq!(*iter.next().unwrap(), 1);
+/// assert_eq!(*iter.next().unwrap(), 2);
+/// assert_eq!(*iter.next().unwrap(), 3);
+/// assert!(iter.next().is_none());
+/// ```
+pub struct IntoIter<'a, T, S: PlaceState> {
+    start: NonNull<T>,
+    // `end` for non-ZSTs and `len` for ZSTs.
+    end_or_len: *const T,
+    _marker: PhantomData<(&'a mut MaybeUninit<PhantomData<[T]>>, S)>,
+}
+
+impl<'a, T, S: PlaceState> IntoIter<'a, T, S> {
+    pub(crate) const fn new(place: PlaceRef<'a, [T], S>) -> Self {
+        let inner = place.inner;
+        mem::forget(place);
+
+        let start = inner.cast::<T>();
+        let end_or_len = if const { size_of::<T>() == 0 } {
+            core::ptr::without_provenance(inner.len())
+        } else {
+            unsafe { start.as_ptr().add(inner.len()) }
+        };
+
+        Self {
+            start,
+            end_or_len,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Converts the iterator back into a slice reference, consuming the
+    /// iterator.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use placid::prelude::*;
+    ///
+    /// let slice = own!([1, 2, 3]);
+    /// let mut iter = slice.into_iter();
+    /// assert_eq!(*iter.next().unwrap(), 1);
+    /// let slice_again = iter.into_slice();
+    /// assert_eq!(*slice_again, [2, 3]);
+    /// ```
+    #[inline]
+    pub fn into_slice(self) -> PlaceRef<'a, [T], S> {
+        let start = self.start;
+
+        let len = self.len();
+        let inner = NonNull::slice_from_raw_parts(start, len);
+
+        mem::forget(self);
+
+        // SAFETY: We are creating a reference from a valid pointer.
+        unsafe { PlaceRef::from_inner(inner) }
+    }
+}
+
+impl<'a, T, S: PlaceState> Drop for IntoIter<'a, T, S> {
+    fn drop(&mut self) {
+        unsafe { core::ptr::read(self).into_slice() };
+    }
+}
+
+impl<'a, T, S: PlaceState> Iterator for IntoIter<'a, T, S> {
+    type Item = PlaceRef<'a, T, S>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if const { size_of::<T>() == 0 } {
+            let len = self.end_or_len.addr();
+            if len == 0 {
+                None
+            } else {
+                // SAFETY: We are creating a reference from a valid pointer.
+                let uninit = unsafe { PlaceRef::from_inner(self.start) };
+                self.end_or_len = core::ptr::without_provenance(len - 1);
+                Some(uninit)
+            }
+        } else {
+            // SAFETY: `self.end` is always non-null.
+            if self.start == unsafe { NonNull::new_unchecked(self.end_or_len.cast_mut()) } {
+                None
+            } else {
+                // SAFETY: We are creating a reference from a valid pointer.
+                let uninit = unsafe { PlaceRef::from_inner(self.start) };
+                // SAFETY: We are advancing the pointer by one element, which is valid for the
+                // original slice.
+                unsafe { self.start = NonNull::new_unchecked(self.start.as_ptr().add(1)) };
+                Some(uninit)
+            }
+        }
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        if const { size_of::<T>() == 0 } {
+            let len = self.end_or_len.addr();
+            if n >= len {
+                self.end_or_len = core::ptr::without_provenance(0);
+                None
+            } else {
+                // SAFETY: We are creating a reference from a valid pointer.
+                let uninit = unsafe { PlaceRef::from_inner(self.start) };
+                self.end_or_len = core::ptr::without_provenance(len - n - 1);
+                Some(uninit)
+            }
+        } else {
+            // SAFETY: `self.end` is always non-null.
+            let end = unsafe { NonNull::new_unchecked(self.end_or_len.cast_mut()) };
+            if n >= unsafe { end.offset_from_unsigned(self.start) } {
+                self.start = end;
+                None
+            } else {
+                // SAFETY: We are creating a reference from a valid pointer.
+                let ptr = unsafe { self.start.as_ptr().add(n) };
+                // SAFETY: We are creating a reference from a valid pointer.
+                let uninit = unsafe { PlaceRef::from_inner(NonNull::new_unchecked(ptr)) };
+                // SAFETY: We are advancing the pointer by `n + 1` elements, which is valid for
+                // the original slice.
+                unsafe { self.start = NonNull::new_unchecked(ptr.add(1)) };
+                Some(uninit)
+            }
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = if const { size_of::<T>() == 0 } {
+            self.end_or_len.addr()
+        } else {
+            // SAFETY: `self.end` is always non-null.
+            let end = unsafe { NonNull::new_unchecked(self.end_or_len.cast_mut()) };
+            // SAFETY: We are calculating the length based on the original slice, which is
+            // valid for the original slice.
+            unsafe { end.offset_from_unsigned(self.start) }
+        };
+        (len, Some(len))
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+}
+
+impl<'a, T, S: PlaceState> DoubleEndedIterator for IntoIter<'a, T, S> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if const { size_of::<T>() == 0 } {
+            let len = self.end_or_len.addr();
+            if len == 0 {
+                None
+            } else {
+                // SAFETY: We are creating a reference from a valid pointer.
+                let uninit = unsafe { PlaceRef::from_inner(self.start) };
+                self.end_or_len = core::ptr::without_provenance(len - 1);
+                Some(uninit)
+            }
+        } else {
+            // SAFETY: `self.end` is always non-null.
+            let end = unsafe { NonNull::new_unchecked(self.end_or_len.cast_mut()) };
+            if self.start == end {
+                None
+            } else {
+                // SAFETY: We are creating a reference from a valid pointer.
+                let ptr = unsafe { end.as_ptr().sub(1) };
+                // SAFETY: We are creating a reference from a valid pointer.
+                let uninit = unsafe { PlaceRef::from_inner(NonNull::new_unchecked(ptr)) };
+                self.end_or_len = ptr;
+                Some(uninit)
+            }
+        }
+    }
+
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        if const { size_of::<T>() == 0 } {
+            let len = self.end_or_len.addr();
+            if n >= len {
+                self.end_or_len = core::ptr::without_provenance(0);
+                None
+            } else {
+                // SAFETY: We are creating a reference from a valid pointer.
+                let uninit = unsafe { PlaceRef::from_inner(self.start) };
+                self.end_or_len = core::ptr::without_provenance(len - n - 1);
+                Some(uninit)
+            }
+        } else {
+            // SAFETY: `self.end` is always non-null.
+            let end = unsafe { NonNull::new_unchecked(self.end_or_len.cast_mut()) };
+            let remaining = unsafe { end.offset_from_unsigned(self.start) };
+            if n >= remaining {
+                self.end_or_len = self.start.as_ptr();
+                None
+            } else {
+                // SAFETY: We are creating a reference from a valid pointer.
+                let ptr = unsafe { end.as_ptr().sub(n + 1) };
+                // SAFETY: We are creating a reference from a valid pointer.
+                let uninit = unsafe { PlaceRef::from_inner(NonNull::new_unchecked(ptr)) };
+                self.end_or_len = ptr;
+                Some(uninit)
+            }
+        }
+    }
+}
+
+impl<'a, T, S: PlaceState> ExactSizeIterator for IntoIter<'a, T, S> {}
+
+impl<'a, T, S: PlaceState> FusedIterator for IntoIter<'a, T, S> {}
+
+#[cfg(test)]
+mod tests {
+    use core::cell::Cell;
+
+    use crate::own;
+
+    #[test]
+    fn test_iter_drop() {
+        struct DropCounter<'a> {
+            count: &'a Cell<usize>,
+        }
+
+        impl<'a> Drop for DropCounter<'a> {
+            fn drop(&mut self) {
+                self.count.set(self.count.get() + 1);
+            }
+        }
+
+        let drop_count = Cell::new(0);
+        {
+            let slice = own!([
+                DropCounter { count: &drop_count },
+                DropCounter { count: &drop_count },
+                DropCounter { count: &drop_count },
+            ]);
+            let mut iter = slice.into_iter();
+            assert_eq!(drop_count.get(), 0);
+            iter.next();
+            assert_eq!(drop_count.get(), 1);
+            iter.next();
+            assert_eq!(drop_count.get(), 2);
+            // drop the iterator before consuming the last element, which should
+            // drop the last element as well.
+        }
+        assert_eq!(drop_count.get(), 3);
     }
 }

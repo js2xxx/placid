@@ -28,6 +28,7 @@ pub use self::dyn_place::DynPlace;
 
 mod array;
 mod slice;
+pub use self::slice::IntoIter;
 
 /// A place in memory that can hold an owned value of type `T`.
 ///
