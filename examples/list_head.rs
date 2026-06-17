@@ -1,5 +1,6 @@
 use std::{
     cell::Cell,
+    convert::Infallible,
     marker::PhantomPinned,
     pin::Pin,
     ptr::{self, NonNull},
@@ -20,7 +21,7 @@ pub struct ListHead {
 
 impl ListHead {
     #[inline]
-    pub fn new() -> impl InitPin<Self> {
+    pub const fn new() -> impl InitPin<Self, Error = Infallible> {
         init_pin!(|this| ListHead {
             next: unsafe { Link::new_unchecked(this) },
             prev: unsafe { Link::new_unchecked(this) },
@@ -30,7 +31,7 @@ impl ListHead {
     }
 
     #[inline]
-    pub fn insert_next(&self) -> impl InitPin<Self> {
+    pub const fn insert_next(&self) -> impl InitPin<Self, Error = Infallible> {
         init_pin!(|this| ListHead {
             prev: (self.next.prev()).replace(unsafe { Link::new_unchecked(this) }),
             next: self.next.replace(unsafe { Link::new_unchecked(this) }),
@@ -40,7 +41,7 @@ impl ListHead {
     }
 
     #[inline]
-    pub fn insert_prev(&self) -> impl InitPin<Self> {
+    pub const fn insert_prev(&self) -> impl InitPin<Self, Error = Infallible> {
         init_pin!(|this| ListHead {
             next: (self.prev.next()).replace(unsafe { Link::new_unchecked(this) }),
             prev: self.prev.replace(unsafe { Link::new_unchecked(this) }),
@@ -83,22 +84,22 @@ impl Link {
     /// by the target `ListHead`'s "prev" link and a "prev" link should be
     /// pointed back by the target `ListHead`'s "next" link.
     #[inline]
-    unsafe fn new_unchecked(ptr: NonNull<ListHead>) -> Self {
+    const unsafe fn new_unchecked(ptr: NonNull<ListHead>) -> Self {
         Self(Cell::new(ptr))
     }
 
     #[inline]
-    fn next(&self) -> &Link {
+    const fn next(&self) -> &Link {
         unsafe { &(*self.0.get().as_ptr()).next }
     }
 
     #[inline]
-    fn prev(&self) -> &Link {
+    const fn prev(&self) -> &Link {
         unsafe { &(*self.0.get().as_ptr()).prev }
     }
 
     #[inline]
-    fn replace(&self, other: Link) -> Link {
+    const fn replace(&self, other: Link) -> Link {
         unsafe { Link::new_unchecked(self.0.replace(other.0.get())) }
     }
 
@@ -108,7 +109,7 @@ impl Link {
     }
 
     #[inline]
-    fn as_ptr(&self) -> *const ListHead {
+    const fn as_ptr(&self) -> *const ListHead {
         self.0.get().as_ptr()
     }
 }
