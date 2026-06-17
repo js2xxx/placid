@@ -21,7 +21,6 @@ use core::{alloc::Allocator, mem::MaybeUninit};
 use core::{
     any::Any,
     borrow::{Borrow, BorrowMut},
-    clone::CloneToUninit,
     error::Error,
     fmt,
     hash::{Hash, Hasher},
@@ -40,8 +39,8 @@ use crate::{
     uninit::Uninit,
 };
 
-mod move_;
-pub use self::move_::{Move, MoveToUninit};
+mod ctor;
+pub use self::ctor::{CloneToUninit, Move, MoveToUninit};
 
 /// An owned reference that contains a fully initialized value of type `T`.
 ///
@@ -311,7 +310,7 @@ impl<'a, T: ?Sized + MoveToUninit> Own<'a, T> {
     /// Moves the value inside the owned reference into another place, leaving
     /// the original place uninitialized.
     ///
-    /// This method calls [`MoveToUninit::move_to_uninit`] (`T`'s custom move
+    /// This method calls [`MoveToUninit::move_to`] (`T`'s custom move
     /// constructor) to perform the move. See the documentation of that trait
     /// for more details.
     ///
@@ -330,7 +329,7 @@ impl<'a, T: ?Sized + MoveToUninit> Own<'a, T> {
     /// ```
     #[inline]
     pub fn move_to<'d>(self, to: Uninit<'d, T>) -> Own<'d, T> {
-        T::move_to_uninit(self, to)
+        T::move_to(self, to)
     }
 
     /// Takes the value out of the owned reference, leaving it uninitialized.

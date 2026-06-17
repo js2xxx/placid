@@ -7,6 +7,98 @@ use core::{
     sync::atomic::*,
 };
 
+use crate::{owned::Own, uninit::Uninit};
+
+/// A trait enabling custom copy constructors.
+///
+/// This trait lets user types define how they can be cloned into uninitialized
+/// memory, which is useful for implementing efficient clone semantics for types
+/// that may not be trivially clonable (e.g. due to `Drop` or `!Unpin`), or for
+/// optimizing clones of large types by avoiding unnecessary copies.
+///
+/// The implemented type may not be `Sized`.
+///
+/// This trait is automatically implemented for any type that implements
+/// [`CloneToUninit`] in the standard library, and wraps its implementation
+/// safely to return an `Own` instead of writing into a raw pointer.
+///
+/// [``CloneToUninit``]: core::clone::CloneToUninit
+pub trait CloneToUninit {
+    /// Clones the value into uninitialized memory, returning a new `Own` that
+    /// owns the value at the new location.
+    fn clone_to<'d>(&self, to: Uninit<'d, Self>) -> Own<'d, Self>;
+}
+
+impl<T: ?Sized + core::clone::CloneToUninit> CloneToUninit for T {
+    #[inline]
+    fn clone_to<'d>(&self, to: Uninit<'d, Self>) -> Own<'d, Self> {
+        let src = self;
+        let dst = to.into_raw();
+
+        // SAFETY: The pointer metadata of `dst` is always valid since `Uninit<T>`
+        // points to a valid uninitialized memory for `Self`.
+        assert_eq!(
+            mem::size_of_val(src),
+            unsafe { mem::size_of_val_raw(dst) },
+            "source and destination must have the same size"
+        );
+
+        let dst = dst.cast();
+        // SAFETY: We are cloning the value into `to`.
+        unsafe {
+            core::clone::CloneToUninit::clone_to_uninit(src, dst);
+            Own::from_raw(ptr::from_raw_parts_mut(dst, ptr::metadata(src)))
+        }
+    }
+}
+
+/// A trait enabling custom move constructors.
+///
+/// This trait lets user types define how they can be moved into uninitialized
+/// memory, which is useful for implementing efficient move semantics for types
+/// that may not be trivially movable (e.g. due to `Drop` or `!Unpin`), or for
+/// optimizing moves of large types by avoiding unnecessary copies.
+///
+/// The implemented type may not be `Sized`.
+///
+/// Trivially movable types are expected to implement `MoveToUninit` with
+/// `IS_TRIVIAL = true` and perform a byte-wise move in `move_to`, but
+/// users may find it necessary to implement it manually due to the limitations
+/// of the Rust type system.
+///
+/// For structs that inherit their default move semantics from their fields, the
+/// [`Move`] macro can be used to automatically generate the implementation by
+/// recursively calling `move_to` on each field. The generated
+/// implementation will be optimized to perform a byte-wise move if all fields
+/// are trivially movable.
+///
+/// # Safety
+///
+/// Implementors must ensure that the `move_to` method performs a
+/// byte-wise move of the value from `from` into `to` as long as
+/// `Self::IS_TRIVIAL` is `true`.
+///
+/// The behavior is not constrained when `Self::IS_TRIVIAL` is `false`, but it
+/// is recommended to still perform a move-like operation to avoid unexpected
+/// behavior.
+///
+/// The requirement is analogus to a correct implementation of `Clone` for a
+/// type that is `Copy`, but enforces via a safety contract.
+///
+/// [`Move`]: crate::owned::Move
+#[diagnostic::on_unimplemented(
+    note = "implement `MoveToUninit` for `{Self}` manually or `#[derive(Move)]`"
+)]
+pub unsafe trait MoveToUninit {
+    /// Whether the type is trivially movable, meaning that a byte-wise move is
+    /// sufficient to transfer ownership of the value.
+    const IS_TRIVIAL: bool = false;
+
+    /// Moves the value into uninitialized memory, returning a new `Own` that
+    /// owns the value at the new location.
+    fn move_to<'d>(from: Own<'_, Self>, to: Uninit<'d, Self>) -> Own<'d, Self>;
+}
+
 /// Marks a type as structurally movable.
 ///
 /// It provides a method to structurally move the value into an uninitialized
@@ -34,62 +126,13 @@ use core::{
 /// ```
 pub use placid_macro::Move;
 
-use crate::{owned::Own, uninit::Uninit};
-
-/// A trait enabling custom moving constructors.
-///
-/// This trait lets user types define how they can be moved into uninitialized
-/// memory, which is useful for implementing efficient move semantics for types
-/// that may not be trivially movable (e.g. due to `Drop` or `!Unpin`), or for
-/// optimizing moves of large types by avoiding unnecessary copies.
-///
-/// The implemented type may not be `Sized`.
-///
-/// Trivially movable types are expected to implement `MoveToUninit` with
-/// `IS_TRIVIAL = true` and perform a byte-wise move in `move_to_uninit`, but
-/// users may find it necessary to implement it manually due to the limitations
-/// of the Rust type system.
-///
-/// For structs that inherit their default move semantics from their fields, the
-/// [`Move`] macro can be used to automatically generate the implementation by
-/// recursively calling `move_to_uninit` on each field. The generated
-/// implementation will be optimized to perform a byte-wise move if all fields
-/// are trivially movable.
-///
-/// # Safety
-///
-/// Implementors must ensure that the `move_to_uninit` method performs a
-/// byte-wise move of the value from `from` into `to` as long as
-/// `Self::IS_TRIVIAL` is `true`.
-///
-/// The behavior is not constrained when `Self::IS_TRIVIAL` is `false`, but it
-/// is recommended to still perform a move-like operation to avoid unexpected
-/// behavior.
-///
-/// The requirement is analogus to a correct implementation of `Clone` for a
-/// type that is `Copy`, but enforces via a safety contract.
-///
-/// [`Move`]: crate::owned::Move
-#[diagnostic::on_unimplemented(
-    note = "implement `MoveToUninit` for `{Self}` manually or `#[derive(Move)]`"
-)]
-pub unsafe trait MoveToUninit {
-    /// Whether the type is trivially movable, meaning that a byte-wise move is
-    /// sufficient to transfer ownership of the value.
-    const IS_TRIVIAL: bool = false;
-
-    /// Moves the value into uninitialized memory, returning a new `Own` that
-    /// owns the value at the new location.
-    fn move_to_uninit<'d>(from: Own<'_, Self>, to: Uninit<'d, Self>) -> Own<'d, Self>;
-}
-
 macro_rules! impl_trivial_sized {
     ($($(@[$($g:tt)*])? $ty:ty),* $(,)?) => {$(
         unsafe impl<$($($g)*)?> MoveToUninit for $ty {
             const IS_TRIVIAL: bool = true;
 
             #[inline]
-            fn move_to_uninit<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+            fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
                 let this = ManuallyDrop::new(from);
                 // SAFETY: We are moving the value out of `this` and into `to`.
                 unsafe { ptr::copy_nonoverlapping(&**this, to.as_mut_ptr(), 1) };
@@ -205,7 +248,7 @@ impl<T: MoveToUninit> SliceGuard<T> {
 unsafe impl<T: MoveToUninit> MoveToUninit for [T] {
     const IS_TRIVIAL: bool = T::IS_TRIVIAL;
 
-    fn move_to_uninit<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+    fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
         assert_eq!(
             from.len(),
             to.len(),
@@ -235,7 +278,7 @@ unsafe impl<T: MoveToUninit> MoveToUninit for [T] {
 unsafe impl<T: MoveToUninit, const N: usize> MoveToUninit for [T; N] {
     const IS_TRIVIAL: bool = T::IS_TRIVIAL;
 
-    fn move_to_uninit<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+    fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
         if T::IS_TRIVIAL {
             let this = ManuallyDrop::new(from);
             // SAFETY: We are moving the values out of `from` and into `to`.
@@ -260,7 +303,7 @@ unsafe impl MoveToUninit for str {
     const IS_TRIVIAL: bool = true;
 
     #[inline]
-    fn move_to_uninit<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+    fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
         assert_eq!(
             from.len(),
             to.len(),
@@ -279,7 +322,7 @@ unsafe impl MoveToUninit for () {
     const IS_TRIVIAL: bool = true;
 
     #[inline]
-    fn move_to_uninit<'d>(_: Own<'_, Self>, to: Uninit<'d, Self>) -> Own<'d, Self> {
+    fn move_to<'d>(_: Own<'_, Self>, to: Uninit<'d, Self>) -> Own<'d, Self> {
         // SAFETY: `to` is now initialized.
         unsafe { to.assume_init() }
     }
@@ -290,7 +333,7 @@ macro_rules! impl_tuples {
         unsafe impl<$($ty: MoveToUninit),*> MoveToUninit for ($($ty,)*) {
             const IS_TRIVIAL: bool = true $(&& $ty::IS_TRIVIAL)*;
 
-            fn move_to_uninit<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+            fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
                 if Self::IS_TRIVIAL {
                     let this = ManuallyDrop::new(from);
                     // SAFETY: We are moving the value out of `from` and into `to`.
@@ -338,7 +381,7 @@ macro_rules! impl_single_derive {
             const IS_TRIVIAL: bool = T::IS_TRIVIAL;
 
             #[inline]
-            fn move_to_uninit<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+            fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
                 // SAFETY: `Self` is #[repr(transparent)] over `T`, so it has the same size
                 // and alignment as `T`. We are moving the value out of `from` and into `to`
                 // by transmuting the references.

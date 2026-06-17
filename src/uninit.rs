@@ -423,7 +423,7 @@ impl<'a, T: ?Sized + MoveToUninit> Uninit<'a, T> {
     /// Constructs the value inside the uninitialized reference by moving it
     /// from another owned reference.
     ///
-    /// This method calls [`MoveToUninit::move_to_uninit`] (`T`'s custom move
+    /// This method calls [`MoveToUninit::move_to`] (`T`'s custom move
     /// constructor) to perform the move. See the documentation of that trait
     /// for more details.
     ///
@@ -442,7 +442,7 @@ impl<'a, T: ?Sized + MoveToUninit> Uninit<'a, T> {
     /// ```
     #[inline]
     pub fn move_from(self, from: Own<'_, T>) -> Own<'a, T> {
-        T::move_to_uninit(from, self)
+        T::move_to(from, self)
     }
 }
 

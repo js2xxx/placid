@@ -22,7 +22,6 @@
 
 use core::{
     cell::Cell,
-    clone::CloneToUninit,
     error::Error,
     fmt,
     hash::{Hash, Hasher},
@@ -34,7 +33,11 @@ use core::{
     task::{Context, Poll},
 };
 
-use crate::{owned::Own, place::Place, uninit::Uninit};
+use crate::{
+    owned::{CloneToUninit, Own},
+    place::Place,
+    uninit::Uninit,
+};
 
 mod slice;
 

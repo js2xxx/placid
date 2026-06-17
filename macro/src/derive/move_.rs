@@ -81,7 +81,7 @@ pub fn move_(input: &DeriveInput) -> syn::Result<TokenStream> {
         {
             const IS_TRIVIAL: bool = true #(&& <#field_ty as #trait_path>::IS_TRIVIAL)*;
 
-            fn move_to_uninit<#lt>(
+            fn move_to<#lt>(
                 from: #own<'_, Self>,
                 mut #dst: #uninit<#lt, Self>,
             ) -> #own<#lt, Self> {
