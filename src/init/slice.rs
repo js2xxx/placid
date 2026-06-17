@@ -30,6 +30,7 @@ pub struct SliceError;
 /// the [`IntoInitPin`] trait for slice types.
 #[derive(Debug, PartialEq)]
 pub struct Slice<'a, T>(&'a [T]);
+impl<'a, T> !crate::init::NonInit for Slice<'a, T> {}
 
 impl<T> Initializer for Slice<'_, T> {
     type Error = SliceError;
@@ -134,6 +135,7 @@ impl<'a, T: Clone, const N: usize> IntoInitPin<[T; N], Slice<'a, T>> for &'a [T]
 /// This initializer is created by the [`str()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct Str<'a>(&'a str);
+impl<'a> !crate::init::NonInit for Str<'a> {}
 
 impl Initializer for Str<'_> {
     type Error = SliceError;
@@ -191,6 +193,7 @@ pub const fn str(s: &str) -> Str<'_> {
 /// This initializer is created by the [`repeat()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct Repeat<T>(T);
+impl<T> !crate::init::NonInit for Repeat<T> {}
 
 impl<T> Initializer for Repeat<T> {
     type Error = Infallible;
@@ -262,6 +265,7 @@ pub const fn repeat<T: Clone>(value: T) -> Repeat<T> {
 /// This initializer is created by the [`repeat_with()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct RepeatWith<F>(F);
+impl<F> !crate::init::NonInit for RepeatWith<F> {}
 
 impl<F> Initializer for RepeatWith<F> {
     type Error = Infallible;
@@ -348,6 +352,7 @@ where
 /// This initializer is created by the [`from_iter()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct FromIter<I, T>(I, PhantomData<fn() -> T>);
+impl<I, T> !crate::init::NonInit for FromIter<I, T> {}
 
 /// The error type for `FromIter` initialization failures.
 #[derive(Debug, thiserror::Error)]
@@ -537,6 +542,7 @@ where
 /// This initializer is created by the [`incremental()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct Incremental<F, A: ?Sized, T>(F, PhantomData<fn(&mut A) -> T>);
+impl<F, A: ?Sized, T> !crate::init::NonInit for Incremental<F, A, T> {}
 
 impl<F, A: ?Sized, T> Initializer for Incremental<F, A, T> {
     type Error = Infallible;

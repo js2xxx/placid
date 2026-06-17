@@ -18,6 +18,7 @@ pub struct And<I, F> {
     init: I,
     f: F,
 }
+impl<I, F> !crate::init::NonInit for And<I, F> {}
 
 impl<I, F> Initializer for And<I, F>
 where
@@ -88,6 +89,7 @@ pub struct AndPin<I, F> {
     init: I,
     f: F,
 }
+impl<I, F> !crate::init::NonInit for AndPin<I, F> {}
 
 impl<I, F> Initializer for AndPin<I, F>
 where

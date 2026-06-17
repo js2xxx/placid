@@ -14,6 +14,7 @@ use crate::{
 /// This initializer is created by the [`value()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct Value<T>(T);
+impl<T> !crate::init::NonInit for Value<T> {}
 
 impl<T> Initializer for Value<T> {
     type Error = Infallible;
@@ -46,8 +47,9 @@ impl<T> Init<T> for Value<T> {
 /// This is a convenience factory function for creating a [`Value`] initializer.
 /// The value is moved into the place and cannot fail.
 ///
-/// This is typically not needed directly, as all types that implement `Clone`
-/// can be used directly as initializers.
+/// This is typically not needed directly, as all types that except explicit
+/// initializers defined in this crate can be used directly as value
+/// initializers.
 ///
 /// ```rust
 /// use placid::prelude::*;
@@ -74,7 +76,7 @@ pub const fn value<T>(value: T) -> Value<T> {
     Value(value)
 }
 
-impl<T: Clone> IntoInitPin<T, Value<T>> for T {
+impl<T: crate::init::NonInit> IntoInitPin<T, Value<T>> for T {
     type Init = Value<T>;
     type Error = Infallible;
 
@@ -89,6 +91,7 @@ impl<T: Clone> IntoInitPin<T, Value<T>> for T {
 /// This initializer is created by the [`try_with()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct TryWith<F>(F);
+impl<F> !crate::init::NonInit for TryWith<F> {}
 
 impl<T, E: core::fmt::Debug, F> Initializer for TryWith<F>
 where
@@ -193,6 +196,7 @@ where
 /// This initializer is created by the [`with()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct With<F>(F);
+impl<F> !crate::init::NonInit for With<F> {}
 
 impl<F> Initializer for With<F> {
     type Error = Infallible;
@@ -283,6 +287,7 @@ pub struct ValueError;
 /// This initializer is created by the [`clone()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct CloneInit<'a, T: ?Sized>(&'a T);
+impl<'a, T: ?Sized> !crate::init::NonInit for CloneInit<'a, T> {}
 
 impl<T: ?Sized + CloneToUninit> Initializer for CloneInit<'_, T> {
     type Error = ValueError;
@@ -370,6 +375,7 @@ impl<'a, T: ?Sized + CloneToUninit> IntoInitPin<T, CloneInit<'a, T>> for &'a T {
 /// This initializer is created by the [`move_()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct MoveInit<'a, T: ?Sized>(Own<'a, T>);
+impl<'a, T: ?Sized> !crate::init::NonInit for MoveInit<'a, T> {}
 
 impl<'a, T: ?Sized + MoveToUninit> Initializer for MoveInit<'a, T> {
     type Error = ValueError;

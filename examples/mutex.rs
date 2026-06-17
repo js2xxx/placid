@@ -78,7 +78,7 @@ impl<T: ?Sized> Mutex<T> {
             Mutex {
                 #[pin]
                 wait_list: ListHead::new(),
-                spin_lock: init::with(SpinLock::new),
+                spin_lock: SpinLock::new(),
                 locked: Cell(false),
                 #[pin]
                 data: UnsafeCell(data),

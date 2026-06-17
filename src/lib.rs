@@ -264,6 +264,7 @@
 )]
 #![feature(allocator_api)]
 #![feature(allow_internal_unstable)]
+#![feature(auto_traits, negative_impls)]
 #![feature(derive_coerce_pointee)]
 #![feature(dropck_eyepatch)]
 #![feature(exact_div)]

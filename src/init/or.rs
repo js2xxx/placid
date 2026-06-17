@@ -12,6 +12,7 @@ pub struct Or<I1, I2, M> {
     init2: I2,
     marker: PhantomData<M>,
 }
+impl<I1, I2, M> !crate::init::NonInit for Or<I1, I2, M> {}
 
 impl<I1, I2, M> Initializer for Or<I1, I2, M>
 where
@@ -94,6 +95,7 @@ pub struct OrElse<I, F> {
     init1: I,
     f: F,
 }
+impl<I, F> !crate::init::NonInit for OrElse<I, F> {}
 
 impl<I, F, I2> Initializer for OrElse<I, F>
 where
@@ -174,6 +176,7 @@ pub struct UnwrapOr<I1, I2, M> {
     init2: I2,
     marker: PhantomData<M>,
 }
+impl<I1, I2, M> !crate::init::NonInit for UnwrapOr<I1, I2, M> {}
 
 impl<I1, I2, M> Initializer for UnwrapOr<I1, I2, M>
 where
@@ -254,6 +257,7 @@ pub struct UnwrapOrElse<I, F> {
     init1: I,
     f: F,
 }
+impl<I, F> !crate::init::NonInit for UnwrapOrElse<I, F> {}
 
 impl<I1, F, I2> Initializer for UnwrapOrElse<I1, F>
 where
@@ -329,6 +333,7 @@ pub struct MapErr<I, F> {
     init: I,
     f: F,
 }
+impl<I, F> !crate::init::NonInit for MapErr<I, F> {}
 
 impl<I, F, E: core::fmt::Debug> Initializer for MapErr<I, F>
 where

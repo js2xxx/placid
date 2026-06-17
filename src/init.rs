@@ -18,6 +18,15 @@ use crate::{
     uninit::Uninit,
 };
 
+/// Rules out `!Initializer` types in trait bounds.
+///
+/// This trait bound is used in direct value initialization for non-initializers
+/// to rule out ambiguities with initializer types. It is automatically
+/// implemented for all types except all explicit initializers in this crate.
+///
+/// FIXME: Find a better way to handle this.
+pub(crate) auto trait NonInit {}
+
 /// A marker trait for initializers.
 ///
 /// This trait itself does not provide any methods, but serves as a common

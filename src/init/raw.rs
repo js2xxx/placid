@@ -15,6 +15,7 @@ type PhantomResult<T, E> = PhantomData<(fn() -> T, fn() -> E)>;
 /// This initializer is created from [`try_raw_pin()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct TryRawPin<F, T: ?Sized, E>(F, PhantomResult<T, E>);
+impl<F, T: ?Sized, E> !crate::init::NonInit for TryRawPin<F, T, E> {}
 
 impl<T: ?Sized, F, E: core::fmt::Debug> Initializer for TryRawPin<F, T, E> {
     type Error = E;
@@ -56,6 +57,7 @@ where
 /// This initializer is created from [`try_raw()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct TryRaw<F, T: ?Sized, E>(F, PhantomResult<T, E>);
+impl<F, T: ?Sized, E> !crate::init::NonInit for TryRaw<F, T, E> {}
 
 impl<T: ?Sized, F, E: core::fmt::Debug> Initializer for TryRaw<F, T, E> {
     type Error = E;
@@ -111,6 +113,7 @@ where
 /// This initializer is created from [`raw_pin()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct RawPin<F, T: ?Sized>(F, PhantomData<fn() -> T>);
+impl<F, T: ?Sized> !crate::init::NonInit for RawPin<F, T> {}
 
 impl<T: ?Sized, F> Initializer for RawPin<F, T> {
     type Error = Infallible;
@@ -151,6 +154,7 @@ where
 /// This initializer is created from [`raw()`] factory function.
 #[derive(Debug, PartialEq)]
 pub struct Raw<F, T: ?Sized>(F, PhantomData<fn() -> T>);
+impl<F, T: ?Sized> !crate::init::NonInit for Raw<F, T> {}
 
 impl<T: ?Sized, F> Initializer for Raw<F, T> {
     type Error = Infallible;
