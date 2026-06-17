@@ -280,6 +280,15 @@ impl<'a, T: ?Sized> Own<'a, T> {
         unsafe { Own::from_raw(place.as_mut_ptr()) }
     }
 
+    #[doc(hidden)]
+    #[inline]
+    pub unsafe fn from_mut_marked<P>(place: &'a mut P, _marker: PhantomData<T>) -> Self
+    where
+        P: Place<T>,
+    {
+        unsafe { Own::from_mut(place) }
+    }
+
     /// Drops the value inside the place and converts it into an uninitialized
     /// reference.
     ///
@@ -854,6 +863,12 @@ pub unsafe trait IntoOwn: Deref + Sized {
     fn into_own_place(self) -> Self::Place {
         Place::from_init(self)
     }
+
+    #[doc(hidden)]
+    #[inline]
+    fn into_own_place_marked(self) -> (Self::Place, PhantomData<Self::Target>) {
+        (self.into_own_place(), PhantomData)
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -922,8 +937,9 @@ impl_std_alloc!(Box, Arc, Rc);
 #[allow_internal_unstable(super_let)]
 macro_rules! into_own {
     ($p:ident <- $e:expr) => {{
-        $p = $crate::owned::IntoOwn::into_own_place($e);
-        unsafe { $crate::owned::Own::from_mut(&mut $p) }
+        let m;
+        ($p, m) = $crate::owned::IntoOwn::into_own_place_marked($e);
+        unsafe { $crate::owned::Own::from_mut_marked(&mut $p, m) }
     }};
     ($e:expr) => {{
         super let mut p;

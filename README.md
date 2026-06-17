@@ -39,7 +39,7 @@ placid = "<the current version>"
 Constructing an owned reference directly on the stack:
 
 ```rust
-use placid::{Own, own, Init, init};
+use placid::prelude::*;
 
 let simple = own!(42);
 assert_eq!(*simple, 42);
@@ -64,7 +64,7 @@ process_owned(owned);
 For self-referential or pinned types:
 
 ```rust
-use placid::{POwn, pown, InitPin, init};
+use placid::prelude::*;
 use std::{pin::Pin, marker::PhantomPinned};
 
 #[derive(InitPin)]
@@ -100,11 +100,11 @@ process_pinned(pinned);
 Moving out an owned reference from a regular smart pointer:
 
 ```rust
-use placid::{Own, into_own, Place};
+use placid::prelude::*;
 
-let boxed = Box::new(String::from("move me"));
+let boxed = Box::new_str(7, "move me");
 
-let mut left; // Box<MaybeUninit<String>>
+let mut left; // Box<[MaybeUninit<u8>]>
 // Move out an owned reference from the Box. The original
 // allocation is transferred to `left`, mutably borrowed
 // by `own`.
@@ -115,8 +115,8 @@ assert_eq!(*own, "move me");
 drop(own);
 
 // Now we can reuse the Box allocation.
-let right = left.write(String::from("new value"));
-assert_eq!(&*right, "new value");
+let right: Own<str> = left.write("new val");
+assert_eq!(&*right, "new val");
 ```
 
 

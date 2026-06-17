@@ -589,10 +589,14 @@ macro_rules! into_pown {
     ($p:ident, $slot:ident <- $e:expr) => {{
         use ::core::pin::Pin;
 
+        let m;
         let pinned = $e;
         let init = unsafe { Pin::into_inner_unchecked(pinned) };
-        $p = $crate::owned::IntoOwn::into_own_place(init);
-        unsafe { $crate::owned::Own::into_pin($crate::owned::Own::from_mut(&mut $p), $slot) }
+        ($p, m) = $crate::owned::IntoOwn::into_own_place_marked(init);
+        unsafe {
+            let own = $crate::owned::Own::from_mut_marked(&mut $p, m);
+            $crate::owned::Own::into_pin(own, $slot)
+        }
     }};
     ($p:ident <- $e:expr) => {{
         use ::core::pin::Pin;
@@ -600,10 +604,14 @@ macro_rules! into_pown {
         super let mut slot = $crate::pin::DroppingSlot::new();
         let slot = unsafe { $crate::pin::DropSlot::new_unchecked(&mut slot) };
 
+        let m;
         let pinned = $e;
         let init = unsafe { Pin::into_inner_unchecked(pinned) };
-        $p = $crate::owned::IntoOwn::into_own_place(init);
-        unsafe { $crate::owned::Own::into_pin($crate::owned::Own::from_mut(&mut $p), slot) }
+        ($p, m) = $crate::owned::IntoOwn::into_own_place_marked(init);
+        unsafe {
+            let own = $crate::owned::Own::from_mut_marked(&mut $p, m);
+            $crate::owned::Own::into_pin(own, slot)
+        }
     }};
     ($e:expr) => {{
         super let mut p;
