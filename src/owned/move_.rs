@@ -66,6 +66,9 @@ use crate::{owned::Own, uninit::Uninit};
 /// is recommended to still perform a move-like operation to avoid unexpected
 /// behavior.
 ///
+/// The requirement is analogus to a correct implementation of `Clone` for a
+/// type that is `Copy`, but enforces via a safety contract.
+///
 /// [`Move`]: crate::owned::Move
 #[diagnostic::on_unimplemented(
     note = "implement `MoveToUninit` for `{Self}` manually or `#[derive(Move)]`"
