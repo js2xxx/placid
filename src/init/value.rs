@@ -1,4 +1,4 @@
-use core::{clone::CloneToUninit, convert::Infallible, mem::size_of_val_raw};
+use core::{clone::CloneToUninit, convert::Infallible, mem::size_of_val_raw, ptr};
 
 use crate::{
     init::{
@@ -310,8 +310,15 @@ impl<T: ?Sized + CloneToUninit> InitPin<T> for CloneInit<'_, T> {
             return Err(InitPinError::new(ValueError, place, slot));
         }
 
+        core::mem::forget(place);
+        let dst = dst.cast();
+
         // SAFETY: `src` and `dst` are valid for reads/writes of `size` bytes.
-        unsafe { src.clone_to_uninit(dst.cast()) };
+        unsafe { src.clone_to_uninit(dst) };
+
+        // SAFETY: The place is now initialized with the value cloned from `src`.
+        let place: Uninit<T> =
+            unsafe { Uninit::from_raw(ptr::from_raw_parts_mut(dst, ptr::metadata(src))) };
 
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init_pin(slot) })
@@ -331,8 +338,15 @@ impl<T: ?Sized + CloneToUninit> Init<T> for CloneInit<'_, T> {
             return Err(InitError::new(ValueError, place));
         }
 
+        core::mem::forget(place);
+        let dst = dst.cast();
+
         // SAFETY: `src` and `dst` are valid for reads/writes of `size` bytes.
-        unsafe { src.clone_to_uninit(dst.cast()) };
+        unsafe { src.clone_to_uninit(dst) };
+
+        // SAFETY: The place is now initialized with the value cloned from `src`.
+        let place: Uninit<T> =
+            unsafe { Uninit::from_raw(ptr::from_raw_parts_mut(dst, ptr::metadata(src))) };
 
         // SAFETY: The place is now initialized.
         Ok(unsafe { place.assume_init() })
