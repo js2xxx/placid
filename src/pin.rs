@@ -27,6 +27,7 @@ use core::{
     fmt,
     hash::{Hash, Hasher},
     mem::{self, MaybeUninit},
+    num::NonZeroUsize,
     ops::{Deref, DerefMut},
     pin::Pin,
     ptr::NonNull,
@@ -49,7 +50,7 @@ mod slice;
 ///
 /// [`drop_slot!`]: macro@crate::drop_slot
 pub struct DroppingSlot<'a, T: ?Sized> {
-    drop_flag: Cell<bool>,
+    drop_flag: Cell<usize>,
     inner: MaybeUninit<Own<'a, T>>,
 }
 
@@ -67,13 +68,13 @@ impl<'a, T: ?Sized> DroppingSlot<'a, T> {
     #[inline]
     pub const fn new() -> Self {
         DroppingSlot {
-            drop_flag: Cell::new(true),
+            drop_flag: Cell::new(0),
             inner: MaybeUninit::uninit(),
         }
     }
 
-    fn assign(&mut self, own: Own<'a, T>) -> &Cell<bool> {
-        if !self.drop_flag.replace(false) {
+    fn assign(&mut self, own: Own<'a, T>, count: NonZeroUsize) -> &Cell<usize> {
+        if self.drop_flag.replace(count.get()) > 0 {
             // SAFETY: We are dropping the inner pinned value.
             unsafe { self.inner.assume_init_drop() };
         }
@@ -91,7 +92,7 @@ impl<'a, T: ?Sized> Default for DroppingSlot<'a, T> {
 
 impl<'a, T: ?Sized> Drop for DroppingSlot<'a, T> {
     fn drop(&mut self) {
-        if !self.drop_flag.get() {
+        if self.drop_flag.get() > 0 {
             // SAFETY: We are dropping the inner pinned value.
             unsafe { self.inner.assume_init_drop() }
         }
@@ -196,7 +197,7 @@ macro_rules! drop_slot {
 /// // be properly dropped somewhere in `drop_slot`.
 /// ```
 pub struct POwn<'b, T: ?Sized> {
-    drop_flag: &'b Cell<bool>,
+    drop_flag: &'b Cell<usize>,
     inner: NonNull<T>,
 }
 
@@ -205,9 +206,13 @@ impl<'b, T: ?Sized> Unpin for POwn<'b, T> {}
 impl<'b, T: ?Sized> Drop for POwn<'b, T> {
     fn drop(&mut self) {
         // Mark the value as dropped.
-        self.drop_flag.set(true);
-        // SAFETY: We are dropping the inner pinned value.
-        unsafe { self.inner.drop_in_place() }
+        let cur = self.drop_flag.get();
+        self.drop_flag.set(cur - 1);
+
+        if cur == 1 {
+            // SAFETY: We are dropping the inner pinned value.
+            unsafe { self.inner.drop_in_place() }
+        }
     }
 }
 
@@ -255,7 +260,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
     /// [`Own::into_pin`]: crate::owned::Own::into_pin
     pub fn new<'a>(own: Own<'a, T>, slot: DropSlot<'a, 'b, T>) -> Self {
         let inner = own.inner;
-        let drop_flag = slot.0.assign(own);
+        let drop_flag = slot.0.assign(own, NonZeroUsize::MIN);
         POwn { drop_flag, inner }
     }
 
@@ -385,7 +390,7 @@ impl<'b, T: ?Sized> POwn<'b, T> {
         T: Unpin,
     {
         let inner = this.inner;
-        this.drop_flag.set(true);
+        this.drop_flag.set(this.drop_flag.get() - 1);
         mem::forget(this);
         unsafe { Own::from_inner(inner) }
     }
