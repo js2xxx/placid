@@ -771,15 +771,15 @@ mod tests {
         let drop_count = Cell::new(0);
         {
             let slice = own!([
-                DropCounter { count: &drop_count },
-                DropCounter { count: &drop_count },
-                DropCounter { count: &drop_count },
+                (0, DropCounter { count: &drop_count }),
+                (1, DropCounter { count: &drop_count }),
+                (2, DropCounter { count: &drop_count }),
             ]);
             let mut iter = slice.into_iter();
             assert_eq!(drop_count.get(), 0);
-            iter.next();
+            assert_eq!(iter.next().unwrap().0, 0);
             assert_eq!(drop_count.get(), 1);
-            iter.next();
+            assert_eq!(iter.next_back().unwrap().0, 2);
             assert_eq!(drop_count.get(), 2);
             // drop the iterator before consuming the last element, which should
             // drop the last element as well.
