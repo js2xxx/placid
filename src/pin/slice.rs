@@ -2,35 +2,6 @@ use core::{mem, ptr::NonNull};
 
 use crate::pin::POwn;
 
-impl<'a, T, const N: usize> POwn<'a, [T; N]> {
-    /// Converts the pinned & owned array into a slice.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use placid::prelude::*;
-    ///
-    /// let array: POwn<[i32; 3]> = pown!([1, 2, 3]);
-    /// let slice: POwn<[i32]> = array.to_slice();
-    /// assert_eq!(*slice, [1, 2, 3]);
-    /// ```
-    #[inline]
-    #[must_use]
-    pub const fn to_slice(self) -> POwn<'a, [T]> {
-        let drop_flag = self.drop_flag;
-        let inner = self.inner;
-        mem::forget(self);
-
-        let slice_ptr = inner.cast::<T>();
-        let slice_slice_ptr = NonNull::slice_from_raw_parts(slice_ptr, N);
-
-        POwn {
-            drop_flag,
-            inner: slice_slice_ptr,
-        }
-    }
-}
-
 /// Slice-specific methods for `POwn`.
 ///
 /// Unlike `Own<[T]>`, `POwn<[T]>` does not implement methods that modify the
@@ -46,7 +17,7 @@ impl<'a, T> POwn<'a, [T]> {
     /// use placid::prelude::*;
     ///
     /// let arr = pown!([1, 2, 3]);
-    /// let slice: POwn<[i32]> = arr.to_slice();
+    /// let slice: POwn<[i32]> = arr.into_slice();
     /// assert_eq!(slice.len(), 3);
     /// ```
     #[inline]
@@ -63,11 +34,11 @@ impl<'a, T> POwn<'a, [T]> {
     /// use placid::prelude::*;
     ///
     /// let empty_arr = pown!([]);
-    /// let empty_slice: POwn<[i32]> = empty_arr.to_slice();
+    /// let empty_slice: POwn<[i32]> = empty_arr.into_slice();
     /// assert!(empty_slice.is_empty());
     ///
     /// let non_empty_arr = pown!([1, 2, 3]);
-    /// let non_empty_slice: POwn<[i32]> = non_empty_arr.to_slice();
+    /// let non_empty_slice: POwn<[i32]> = non_empty_arr.into_slice();
     /// assert!(!non_empty_slice.is_empty());
     /// ```
     #[inline]
@@ -88,12 +59,12 @@ impl<'a, T> POwn<'a, [T]> {
     /// use placid::prelude::*;
     ///
     /// let orig = pown!([1, 2, 3]);
-    /// let slice: POwn<[i32]> = orig.to_slice();
-    /// let array = slice.to_array::<3>().unwrap();
+    /// let slice: POwn<[i32]> = orig.into_slice();
+    /// let array = slice.into_array::<3>().unwrap();
     /// assert_eq!(*array, [1, 2, 3]);
     /// ```
     #[inline]
-    pub const fn to_array<const N: usize>(self) -> Result<POwn<'a, [T; N]>, Self> {
+    pub const fn into_array<const N: usize>(self) -> Result<POwn<'a, [T; N]>, Self> {
         if self.len() == N {
             let inner = self.inner;
             let drop_flag = self.drop_flag;
@@ -127,13 +98,13 @@ impl<'a, T> POwn<'a, [T]> {
     /// use placid::prelude::*;
     ///
     /// let array = pown!([1, 2, 3, 4]);
-    /// let slice: POwn<[i32]> = array.to_slice();
-    /// let chunks = unsafe { slice.to_chunks_unchecked::<2>() };
+    /// let slice: POwn<[i32]> = array.into_slice();
+    /// let chunks = unsafe { slice.into_chunks_unchecked::<2>() };
     /// assert_eq!(*chunks, [[1, 2], [3, 4]]);
     /// ```
     #[inline]
     #[must_use]
-    pub const unsafe fn to_chunks_unchecked<const N: usize>(self) -> POwn<'a, [[T; N]]> {
+    pub const unsafe fn into_chunks_unchecked<const N: usize>(self) -> POwn<'a, [[T; N]]> {
         let drop_flag = self.drop_flag;
         let inner = self.inner;
         mem::forget(self);
@@ -153,7 +124,7 @@ impl<'a, T> POwn<'a, [T]> {
     /// than `N`.
     ///
     /// The remainder is meaningful in the division sense. Given `let (chunks,
-    /// remainder) = slice.to_chunks()`, then:
+    /// remainder) = slice.into_chunks()`, then:
     ///
     /// - `chunks.len() == slice.len() / N`
     /// - `remainder.len() == slice.len() % N`
@@ -169,13 +140,13 @@ impl<'a, T> POwn<'a, [T]> {
     /// use placid::prelude::*;
     ///
     /// let array = pown!([1, 2, 3, 4]);
-    /// let slice: POwn<[i32]> = array.to_slice();
-    /// let chunks = slice.to_chunks::<2>();
+    /// let slice: POwn<[i32]> = array.into_slice();
+    /// let chunks = slice.into_chunks::<2>();
     /// assert_eq!(*chunks, [[1, 2], [3, 4]]);
     /// ```
     #[inline]
     #[must_use]
-    pub fn to_chunks<const N: usize>(self) -> POwn<'a, [[T; N]]> {
+    pub fn into_chunks<const N: usize>(self) -> POwn<'a, [[T; N]]> {
         assert!(N != 0, "chunk size must be non-zero");
         assert!(
             self.len().is_multiple_of(N),
@@ -183,7 +154,7 @@ impl<'a, T> POwn<'a, [T]> {
         );
 
         // SAFETY: The caller has guaranteed that `N != 0` and `self.len() % N == 0`.
-        unsafe { self.to_chunks_unchecked::<N>() }
+        unsafe { self.into_chunks_unchecked::<N>() }
     }
 }
 
@@ -204,7 +175,7 @@ impl<'a, T, const N: usize> POwn<'a, [[T; N]]> {
     /// use placid::prelude::*;
     ///
     /// let array = pown!([[1, 2], [3, 4]]);
-    /// let slice: POwn<[[i32; 2]]> = array.to_slice();
+    /// let slice: POwn<[[i32; 2]]> = array.into_slice();
     /// let flat_slice = slice.flatten();
     /// assert_eq!(*flat_slice, [1, 2, 3, 4]);
     /// ```

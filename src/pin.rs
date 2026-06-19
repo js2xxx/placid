@@ -39,6 +39,7 @@ use crate::{
     uninit::Uninit,
 };
 
+mod array;
 mod slice;
 
 /// A slot that holds and manages the lifetime of a pinned owned value.

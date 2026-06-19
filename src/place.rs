@@ -559,7 +559,7 @@ macro_rules! std_alloc_places {
 
 #[cfg(feature = "alloc")]
 std_alloc_places! {
-    Box: [mut; ],
+    Box: [mut; try_slice],
     Rc: [;],
     Arc: [;],
 }

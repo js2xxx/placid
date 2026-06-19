@@ -46,12 +46,12 @@ impl<'a, T, const N: usize, S: PlaceState> PlaceRef<'a, [T; N], S> {
     /// use placid::prelude::*;
     ///
     /// let arr = own!([1, 2, 3]);
-    /// let slice = arr.to_slice();
+    /// let slice = arr.into_slice();
     /// assert_eq!(*slice, [1, 2, 3]);
     /// ```
     #[inline]
     #[must_use]
-    pub const fn to_slice(self) -> PlaceRef<'a, [T], S> {
+    pub const fn into_slice(self) -> PlaceRef<'a, [T], S> {
         self
     }
 
@@ -63,12 +63,12 @@ impl<'a, T, const N: usize, S: PlaceState> PlaceRef<'a, [T; N], S> {
     /// use placid::prelude::*;
     ///
     /// let arr = own!([1, 2, 3]);
-    /// let places = arr.to_each();
+    /// let places = arr.into_each();
     /// assert_eq!(places.map(|p| *p), [1, 2, 3]);
     /// ```
     #[inline]
     #[must_use]
-    pub const fn to_each(self) -> [PlaceRef<'a, T, S>; N] {
+    pub const fn into_each(self) -> [PlaceRef<'a, T, S>; N] {
         let inner = self.inner.cast::<T>();
         mem::forget(self);
 

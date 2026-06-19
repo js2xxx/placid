@@ -55,11 +55,11 @@ impl<'a, T, S: PlaceState> PlaceRef<'a, [T], S> {
     /// use placid::prelude::*;
     ///
     /// let slice: Own<[i32]> = own!([1, 2, 3]);
-    /// let array = slice.to_array::<3>().unwrap();
+    /// let array = slice.into_array::<3>().unwrap();
     /// assert_eq!(*array, [1, 2, 3]);
     /// ```
     #[inline]
-    pub const fn to_array<const N: usize>(
+    pub const fn into_array<const N: usize>(
         self,
     ) -> Result<PlaceRef<'a, [T; N], S>, PlaceRef<'a, [T], S>> {
         if self.len() == N {
@@ -85,7 +85,7 @@ macro_rules! impl_fwd {
     ) => {
         $(#[$meta])*
         $vis fn $name $(<$($g)*>)? (self$(, $arg: $arg_ty)*) -> $ret_ty {
-            self.to_slice().$name($($arg),*)
+            self.into_slice().$name($($arg),*)
         }
     };
     (@FWD $(#[$meta:meta])*
@@ -94,7 +94,7 @@ macro_rules! impl_fwd {
     ) => {
         $(#[$meta])*
         $vis const fn $name $(<$($g)*>)? (self$(, $arg: $arg_ty)*) -> $ret_ty {
-            self.to_slice().$name($($arg),*)
+            self.into_slice().$name($($arg),*)
         }
     };
     (@FWD $(#[$meta:meta])*
@@ -103,7 +103,7 @@ macro_rules! impl_fwd {
     ) => {
         $(#[$meta])*
         $vis const unsafe fn $name $(<$($g)*>)? (self$(, $arg: $arg_ty)*) -> $ret_ty {
-            unsafe { self.to_slice().$name($($arg),*) }
+            unsafe { self.into_slice().$name($($arg),*) }
         }
     };
 
@@ -399,12 +399,12 @@ impl_fwd!(impl<'a> T {
     /// use placid::prelude::*;
     ///
     /// let slice = own!([1, 2, 3, 4]);
-    /// let chunks = unsafe { slice.to_chunks_unchecked::<2>() };
+    /// let chunks = unsafe { slice.into_chunks_unchecked::<2>() };
     /// assert_eq!(*chunks, [[1, 2], [3, 4]]);
     /// ```
     #[inline]
     #[must_use]
-    pub M{const unsafe} fn to_chunks_unchecked[const N: usize](this @ self)
+    pub M{const unsafe} fn into_chunks_unchecked[const N: usize](this @ self)
         -> PlaceRef<'a, [[T; N]], S>
     {
         let inner = this.inner;
@@ -422,7 +422,7 @@ impl_fwd!(impl<'a> T {
     /// than `N`.
     ///
     /// The remainder is meaningful in the division sense. Given `let (chunks,
-    /// remainder) = slice.to_chunks()`, then:
+    /// remainder) = slice.into_chunks()`, then:
     ///
     /// - `chunks.len() == slice.len() / N`
     /// - `remainder.len() == slice.len() % N`
@@ -442,13 +442,13 @@ impl_fwd!(impl<'a> T {
     /// use placid::prelude::*;
     ///
     /// let slice = own!([1, 2, 3, 4, 5]);
-    /// let (chunks, remainder) = slice.to_chunks::<2>();
+    /// let (chunks, remainder) = slice.into_chunks::<2>();
     /// assert_eq!(*chunks, [[1, 2], [3, 4]]);
     /// assert_eq!(*remainder, [5]);
     /// ```
     #[inline]
     #[must_use]
-    pub M{} fn to_chunks[const N: usize](this @ self)
+    pub M{} fn into_chunks[const N: usize](this @ self)
         -> (PlaceRef<'a, [[T; N]], S>, PlaceRef<'a, [T], S>)
     {
         assert!(N != 0, "chunk size must be non-zero");
@@ -459,7 +459,7 @@ impl_fwd!(impl<'a> T {
         let (multiple_of_n, remainder) = unsafe { this.split_at_unchecked(len_rounded_down) };
         // SAFETY: We already panicked for zero, and ensured by construction
         // that the length of the subslice is a multiple of N.
-        let array_slice = unsafe { multiple_of_n.to_chunks_unchecked() };
+        let array_slice = unsafe { multiple_of_n.into_chunks_unchecked() };
         (array_slice, remainder)
     }
 });
@@ -528,7 +528,7 @@ impl<'a, T, const N: usize, const Q: usize, S: PlaceState> PlaceRef<'a, [[T; N];
     #[inline]
     #[must_use]
     pub const fn flatten(self) -> PlaceRef<'a, [T], S> {
-        self.to_slice().flatten()
+        self.into_slice().flatten()
     }
 }
 
