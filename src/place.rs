@@ -564,9 +564,9 @@ std_alloc_places! {
     Arc: [;],
 }
 
-/// A place state marker for owned places.
+/// A place state marker for owned references.
 pub enum Owned {}
-/// A place state marker for uninitialized places.
+/// A place state marker for uninitialized references.
 pub enum Uninitialized {}
 
 /// A place state marker.
@@ -636,7 +636,11 @@ impl<'a, T: ?Sized, S: PlaceState> PlaceRef<'a, T, S> {
 
 // SAFETY: We have `owns_value: PhantomData<T>`, which tells the dropck that we
 // own a value of type T.
-unsafe impl<'a, #[may_dangle] T: ?Sized, S: PlaceState> Drop for PlaceRef<'a, T, S> {
+unsafe impl<'a, #[may_dangle] T, S> Drop for PlaceRef<'a, T, S>
+where
+    T: ?Sized,
+    S: PlaceState,
+{
     #[inline]
     fn drop(&mut self) {
         // SAFETY: We are dropping the place, so we need to drop the value if it is

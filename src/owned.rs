@@ -40,6 +40,7 @@ use crate::{
 };
 
 mod ctor;
+pub(crate) use self::ctor::assert_trivially_movable;
 pub use self::ctor::{CloneToUninit, Move, MoveToUninit};
 
 /// An owned reference that contains a fully initialized value of type `T`.
@@ -363,12 +364,7 @@ impl<'a, T: ?Sized + MoveToUninit> Own<'a, T> {
     where
         T: Sized,
     {
-        const {
-            assert!(
-                T::IS_TRIVIAL,
-                "only trivially movable types can be taken out of an owned reference"
-            )
-        };
+        const { assert_trivially_movable::<T>() };
         let inner = this.inner;
         mem::forget(this);
         // SAFETY: We have exclusive ownership of the value, so we can take it out.
@@ -396,12 +392,7 @@ impl<'a, T: ?Sized + MoveToUninit> Own<'a, T> {
     where
         T: Sized,
     {
-        const {
-            assert!(
-                T::IS_TRIVIAL,
-                "only trivially movable types can be taken out of an owned reference"
-            )
-        };
+        const { assert_trivially_movable::<T>() };
         let inner = this.inner;
         mem::forget(this);
         // SAFETY: We have exclusive ownership of the value, so we can take it out.
@@ -544,7 +535,11 @@ impl<'a> Default for Own<'a, core::ffi::CStr> {
     }
 }
 
-impl<'a, 'b, T: ?Sized + PartialEq<U>, U: ?Sized> PartialEq<Own<'b, U>> for Own<'a, T> {
+impl<'a, 'b, T, U> PartialEq<Own<'b, U>> for Own<'a, T>
+where
+    T: ?Sized + PartialEq<U>,
+    U: ?Sized,
+{
     #[inline]
     fn eq(&self, other: &Own<'b, U>) -> bool {
         **self == **other
@@ -553,7 +548,11 @@ impl<'a, 'b, T: ?Sized + PartialEq<U>, U: ?Sized> PartialEq<Own<'b, U>> for Own<
 
 impl<'a, T: ?Sized + Eq> Eq for Own<'a, T> {}
 
-impl<'a, 'b, T: ?Sized + PartialOrd<U>, U: ?Sized> PartialOrd<Own<'b, U>> for Own<'a, T> {
+impl<'a, 'b, T, U> PartialOrd<Own<'b, U>> for Own<'a, T>
+where
+    T: ?Sized + PartialOrd<U>,
+    U: ?Sized,
+{
     #[inline]
     fn partial_cmp(&self, other: &Own<'b, U>) -> Option<core::cmp::Ordering> {
         (**self).partial_cmp(&**other)

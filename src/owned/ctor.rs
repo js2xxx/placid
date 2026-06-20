@@ -99,6 +99,10 @@ pub unsafe trait MoveToUninit {
     fn move_to<'d>(from: Own<'_, Self>, to: Uninit<'d, Self>) -> Own<'d, Self>;
 }
 
+pub(crate) const fn assert_trivially_movable<T: MoveToUninit + ?Sized>() {
+    const { assert!(T::IS_TRIVIAL, "the type is not trivially movable") };
+}
+
 /// Marks a type as structurally movable.
 ///
 /// It provides a method to structurally move the value into an uninitialized
