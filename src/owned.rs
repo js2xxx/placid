@@ -57,18 +57,43 @@ pub use self::ctor::{AssertTrivialMove, CloneToUninit, Move, MoveToUninit};
 /// ```
 pub type Own<'a, T> = PlaceRef<'a, T, Owned>;
 
-/// Creates a new place initialized with the given expression.
+/// Creates a new owned reference to a value constructed on the current call
+/// stack.
 ///
-/// The expression is evaluated and stored on the current call stack. The macro
-/// then creates a `PlaceRef` pointing to that storage. This means the created
-/// place is only valid within the scope it was created in.
+/// The given [initializer] expression is evaluated and its result is stored in
+/// a fresh place on the current call stack; the macro then yields an owned
+/// reference pointing to that storage. This means the place is only valid
+/// within the scope the macro is invoked in.
+///
+/// Two forms are supported:
+///
+/// - `own!($init)` returns an [`Own<T>`], and therefore requires `T` to be
+///   [trivially movable]. Use this for ordinary, freely-movable values.
+/// - `own!(@fix $init)` returns a [`Fix<Own<T>>`] instead, keeping the value
+///   [fixed] to its place. Unlike the plain form, this works for *any* `T` —
+///   including types that are not trivially movable — and is the
+///   stack-allocating counterpart of [`Place::write_fix`].
 ///
 /// # Examples
 ///
 /// ```rust
-/// let my_place = placid::own!(10);
+/// use placid::prelude::*;
+///
+/// // Plain form: an `Own<i32>`.
+/// let my_place = own!(10);
 /// assert_eq!(*my_place, 10);
+///
+/// // Fixed form: a `Fix<Own<String>>`.
+/// let fixed: Fix<Own<String>> = own!(@fix String::from("fixed"));
+/// assert_eq!(&*fixed, "fixed");
 /// ```
+///
+/// [initializer]: crate::init::Init
+/// [`Own<T>`]: crate::owned::Own
+/// [`Fix<Own<T>>`]: crate::fixed::Fix
+/// [trivially movable]: crate::owned::MoveToUninit
+/// [fixed]: crate::fixed::Fix
+/// [`Place::write_fix`]: crate::place::Place::write_fix
 #[macro_export]
 #[allow_internal_unstable(super_let)]
 macro_rules! own {
@@ -626,7 +651,7 @@ impl<'a, F: ?Sized + Future + Unpin> Future for Own<'a, F> {
 
 /// # Safety
 ///
-/// The resulting `Box<T>` must must outlive the place with which it is
+/// The resulting `Box<T>` must not outlive the place with which it is
 /// associated.
 #[cfg(feature = "alloc")]
 #[allow(dead_code)]

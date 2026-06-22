@@ -151,6 +151,66 @@
 //! manual creation of it is unsafe, and only safe method is via the
 //! [`drop_slot!`] macro and its wrappers.
 //!
+//! ## Temporary fixation: `Fix<P>`
+//!
+//! [`Fix<P>`] is a pointer wrapper that fixes the value behind a pointer `P` to
+//! its current memory location, much like [`Pin<P>`]. The crucial difference is
+//! that `Fix` makes *one fewer promise*: it does **not** require the value to
+//! remain valid at its location until it is dropped (the drop guarantee
+//! described above). Relaxing that requirement enables two extra safe
+//! operations:
+//!
+//! 1. A fixed value can be safely **leaked or forgotten**; and
+//! 2. Fixation is **temporary**, so a `Fix<&mut T>` can be constructed safely
+//!    from an ordinary `&mut T` via [`Fix::new`].
+//!
+//! In return, `Fix` only guarantees that the value is never *moved out* of its
+//! place during fixation: it refuses to hand out a `&mut T`, or to unwrap its
+//! inner pointer, unless the target type is *trivially movable*. The opt-out
+//! trait here is [`MoveToUninit`], which plays the role that `Unpin` does for
+//! `Pin`. This is exactly what makes safe in-place construction sound — every
+//! initializer hands back a [`Fix<Own<T>>`], so a freshly built value is
+//! guaranteed to stay put even though its custom move and drop logic has not
+//! run yet. In fact, for a type that is not trivially movable, [`Fix<Own<T>>`]
+//! (or [`POwn<T>`]) is the only owned form that safe code can obtain; a bare
+//! [`Own<T>`], which always exposes `&mut T`, is reserved for trivially movable
+//! types.
+//!
+//! Unlike `Pin`, `Fix` needs no bespoke projection support: structural
+//! projection works out of the box through the [`munge`] crate, and each
+//! projected field stays wrapped in `Fix`.
+//!
+//! ```rust
+//! use placid::prelude::*;
+//!
+//! // Fixation is temporary, so a `Fix<&mut T>` is safe to create.
+//! let mut value = 42;
+//! let fixed = Fix::new(&mut value);
+//! assert_eq!(*fixed, 42);
+//!
+//! // `i32` is trivially movable, so the `&mut` can still be recovered.
+//! let back: &mut i32 = Fix::into_inner(fixed);
+//! *back += 1;
+//! assert_eq!(value, 43);
+//! ```
+//!
+//! A [`Fix<Own<T>>`] keeps its value fixed to its place, while still letting it
+//! be relocated to another place through its move constructor:
+//!
+//! ```rust
+//! use placid::prelude::*;
+//!
+//! // `own!(@fix ..)` builds the value on the stack and returns a
+//! // `Fix<Own<T>>` directly, without ever exposing a bare `Own`.
+//! let fixed: Fix<Own<String>> = own!(@fix String::from("fixed"));
+//!
+//! // Relocate into another place via the move constructor; no `&mut` is exposed
+//! // in between, so the fixation is never broken.
+//! let uninit = uninit!(String);
+//! let moved = fixed.move_to(uninit);
+//! assert_eq!(&*moved, "fixed");
+//! ```
+//!
 //! ## In-place construction & `&uninit T`
 //!
 //! Uninit references represent writable references to uninitialized memory.
@@ -245,6 +305,12 @@
 //! [`&uninit T`]: crate::uninit::Uninit
 //! [`&pin own T`]: crate::pin::POwn
 //! [`POwn<T>`]: crate::pin::POwn
+//! [`Own<T>`]: crate::owned::Own
+//! [`Fix<P>`]: crate::fixed::Fix
+//! [`Fix<Own<T>>`]: crate::fixed::Fix
+//! [`Fix::new`]: crate::fixed::Fix::new
+//! [`Pin<P>`]: core::pin::Pin
+//! [`MoveToUninit`]: crate::owned::MoveToUninit
 //! [in-place construction]: mod@crate::init
 //! [place]: crate::place::Place
 //! [drop slot]: crate::pin::DropSlot

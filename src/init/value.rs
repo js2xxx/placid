@@ -390,9 +390,8 @@ impl<'a, T: ?Sized + MoveToUninit> InitPin<T> for MoveInit<'a, T> {
             return Err(InitPinError::new(ValueError, place, slot));
         }
 
-        todo!()
-        // let own = src.move_to(place);
-        // Ok(Own::into_pin(own, slot))
+        let own = src.move_to(place);
+        Ok(Fix::into_pin(own, slot))
     }
 }
 
