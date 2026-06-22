@@ -565,6 +565,8 @@ impl<'a, T: Default> Own<'a, T> {
 impl<'a, T> Default for Own<'a, [T]> {
     #[inline]
     fn default() -> Self {
+        // SAFETY: A pointer to `[]` is always dangling but well-aligned, and the
+        // zero-length access makes it sound.
         unsafe { Own::from_inner(NonNull::from_mut(&mut [])) }
     }
 }
@@ -572,14 +574,15 @@ impl<'a, T> Default for Own<'a, [T]> {
 impl<'a> Default for Own<'a, str> {
     #[inline]
     fn default() -> Self {
-        unsafe { Own::from_inner(NonNull::from_ref("")) }
-    }
-}
-
-impl<'a> Default for Own<'a, core::ffi::CStr> {
-    #[inline]
-    fn default() -> Self {
-        unsafe { Own::from_inner(NonNull::from_ref(c"")) }
+        // A dangling but well-aligned, zero-length `str`. Using a dangling
+        // pointer rather than `&""` avoids deriving a `&mut str` into read-only
+        // `'static` memory through `Own`'s `DerefMut` and drop glue. The
+        // zero-length access makes the dangling pointer sound.
+        let dangling = core::ptr::dangling_mut::<u8>();
+        let ptr: *mut str = core::ptr::from_raw_parts_mut(dangling, 0);
+        // SAFETY: `ptr` is non-null and well-aligned, and points to a valid empty
+        // `str`, which owns no value that needs dropping.
+        unsafe { Own::from_inner(NonNull::new_unchecked(ptr)) }
     }
 }
 
