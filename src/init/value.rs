@@ -1,9 +1,8 @@
 use core::{convert::Infallible, mem::size_of_val_raw};
 
 use crate::{
-    init::{
-        Init, InitError, InitPin, InitPinError, InitPinResult, InitResult, Initializer, IntoInitPin,
-    },
+    fixed::Fix,
+    init::*,
     owned::{CloneToUninit, MoveToUninit, Own},
     pin::DropSlot,
     uninit::Uninit,
@@ -37,8 +36,8 @@ impl<T> Init<T> for Value<T> {
     #[inline]
     fn init(self, mut place: Uninit<'_, T>) -> InitResult<'_, T, Infallible> {
         (*place).write(self.0);
-        // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
+        // SAFETY: The place is now initialized without being moved again.
+        Ok(unsafe { Fix::new(place.assume_init()) })
     }
 }
 
@@ -65,7 +64,7 @@ impl<T> Init<T> for Value<T> {
 /// use placid::prelude::*;
 ///
 /// let uninit: Uninit<i32> = uninit!();
-/// let owned = uninit.write(init::value(100).and(|v| *v += 23));
+/// let owned = uninit.write(init::value(100).and(|mut v| *v += 23));
 /// assert_eq!(*owned, 123);
 /// ```
 ///
@@ -130,8 +129,8 @@ where
         match (self.0)() {
             Ok(value) => {
                 (*place).write(value);
-                // SAFETY: The place is now initialized.
-                Ok(unsafe { place.assume_init() })
+                // SAFETY: The place is now initialized without being moved again.
+                Ok(unsafe { Fix::new(place.assume_init()) })
             }
             Err(e) => Err(InitError { error: e, place }),
         }
@@ -225,8 +224,8 @@ where
     #[inline]
     fn init(self, mut place: Uninit<'_, T>) -> InitResult<'_, T, Infallible> {
         (*place).write((self.0)());
-        // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
+        // SAFETY: The place is now initialized without being moved again.
+        Ok(unsafe { Fix::new(place.assume_init()) })
     }
 }
 
@@ -311,7 +310,7 @@ impl<T: ?Sized + CloneToUninit> InitPin<T> for CloneInit<'_, T> {
         }
 
         let own = src.clone_to(place);
-        Ok(Own::into_pin(own, slot))
+        Ok(Fix::into_pin(own, slot))
     }
 }
 
@@ -367,7 +366,7 @@ impl<'a, T: ?Sized + CloneToUninit> IntoInitPin<T, CloneInit<'a, T>> for &'a T {
 ///
 /// This initializer is created by the [`move_()`] factory function.
 #[derive(Debug, PartialEq)]
-pub struct MoveInit<'a, T: ?Sized>(Own<'a, T>);
+pub struct MoveInit<'a, T: ?Sized>(Fix<Own<'a, T>>);
 impl<'a, T: ?Sized> !crate::init::NonInit for MoveInit<'a, T> {}
 
 impl<'a, T: ?Sized + MoveToUninit> Initializer for MoveInit<'a, T> {
@@ -391,8 +390,9 @@ impl<'a, T: ?Sized + MoveToUninit> InitPin<T> for MoveInit<'a, T> {
             return Err(InitPinError::new(ValueError, place, slot));
         }
 
-        let own = src.move_to(place);
-        Ok(Own::into_pin(own, slot))
+        todo!()
+        // let own = src.move_to(place);
+        // Ok(Own::into_pin(own, slot))
     }
 }
 
@@ -420,6 +420,10 @@ impl<'a, T: ?Sized + MoveToUninit> Init<T> for MoveInit<'a, T> {
 /// fail if the size of the value does not match the size of the destination
 /// place, which could only happen if unsized.
 ///
+/// This is typically unnecessary to use directly, as all owned references,
+/// whether fixed or not, that point to types that implement `MoveToUninit` can
+/// be used directly as move initializers.
+///
 /// # Examples
 ///
 /// ```rust
@@ -427,15 +431,25 @@ impl<'a, T: ?Sized + MoveToUninit> Init<T> for MoveInit<'a, T> {
 ///
 /// let owned = own!(String::from("hello"));
 /// let uninit: Uninit<String> = uninit!(String);
-/// let result = uninit.write(init::move_(owned));
+/// let result = uninit.write(owned);
 /// assert_eq!(*result, String::from("hello"));
 /// ```
 #[inline]
-pub const fn move_<T: ?Sized + MoveToUninit>(this: Own<'_, T>) -> MoveInit<'_, T> {
+pub const fn move_<T: ?Sized + MoveToUninit>(this: Fix<Own<'_, T>>) -> MoveInit<'_, T> {
     MoveInit(this)
 }
 
 impl<'a, T: ?Sized + MoveToUninit> IntoInitPin<T, MoveInit<'a, T>> for Own<'a, T> {
+    type Init = MoveInit<'a, T>;
+    type Error = ValueError;
+
+    #[inline]
+    fn into_init(self) -> Self::Init {
+        MoveInit(Fix::new(self))
+    }
+}
+
+impl<'a, T: ?Sized + MoveToUninit> IntoInitPin<T, MoveInit<'a, T>> for Fix<Own<'a, T>> {
     type Init = MoveInit<'a, T>;
     type Error = ValueError;
 

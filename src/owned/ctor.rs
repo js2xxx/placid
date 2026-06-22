@@ -1,13 +1,14 @@
 use core::{
     cell::{Cell, UnsafeCell},
     marker::PhantomData,
-    mem::{self, Discriminant, ManuallyDrop, MaybeUninit},
+    mem::{self, Discriminant, ManuallyDrop, MaybeUninit, size_of_val_raw},
     num::*,
+    ops::{Deref, DerefMut},
     ptr::{self, NonNull},
     sync::atomic::*,
 };
 
-use crate::{owned::Own, uninit::Uninit};
+use crate::{fixed::Fix, owned::Own, uninit::Uninit};
 
 /// A trait enabling custom copy constructors.
 ///
@@ -24,14 +25,14 @@ use crate::{owned::Own, uninit::Uninit};
 ///
 /// [``CloneToUninit``]: core::clone::CloneToUninit
 pub trait CloneToUninit {
-    /// Clones the value into uninitialized memory, returning a new `Own` that
-    /// owns the value at the new location.
-    fn clone_to<'d>(&self, to: Uninit<'d, Self>) -> Own<'d, Self>;
+    /// Clones the value into uninitialized memory, returning a new fixed `Own`
+    /// that owns the value at the new location.
+    fn clone_to<'d>(&self, to: Uninit<'d, Self>) -> Fix<Own<'d, Self>>;
 }
 
 impl<T: ?Sized + core::clone::CloneToUninit> CloneToUninit for T {
     #[inline]
-    fn clone_to<'d>(&self, to: Uninit<'d, Self>) -> Own<'d, Self> {
+    fn clone_to<'d>(&self, to: Uninit<'d, Self>) -> Fix<Own<'d, Self>> {
         let src = self;
         let dst = to.into_raw();
 
@@ -47,7 +48,8 @@ impl<T: ?Sized + core::clone::CloneToUninit> CloneToUninit for T {
         // SAFETY: We are cloning the value into `to`.
         unsafe {
             core::clone::CloneToUninit::clone_to_uninit(src, dst);
-            Own::from_raw(ptr::from_raw_parts_mut(dst, ptr::metadata(src)))
+            let ptr = ptr::from_raw_parts_mut(dst, ptr::metadata(src));
+            Fix::new(Own::from_raw(ptr))
         }
     }
 }
@@ -94,13 +96,103 @@ pub unsafe trait MoveToUninit {
     /// sufficient to transfer ownership of the value.
     const IS_TRIVIAL: bool = false;
 
+    /// Moves the value into uninitialized memory, returning a new object that
+    /// owns the value at the new location.
+    fn move_to<'d>(from: Fix<Own<'_, Self>>, to: Uninit<'d, Self>) -> Fix<Own<'d, Self>>;
+
     /// Moves the value into uninitialized memory, returning a new `Own` that
     /// owns the value at the new location.
-    fn move_to<'d>(from: Own<'_, Self>, to: Uninit<'d, Self>) -> Own<'d, Self>;
+    ///
+    /// This method requires the implemented type to be trivially movable.
+    #[inline]
+    fn move_to_unfix<'d>(from: Own<'_, Self>, to: Uninit<'d, Self>) -> Own<'d, Self> {
+        Fix::into_inner(Self::move_to(Fix::new(from), to))
+    }
 }
 
-pub(crate) const fn assert_trivially_movable<T: MoveToUninit + ?Sized>() {
-    const { assert!(T::IS_TRIVIAL, "the type is not trivially movable") };
+/// A simple wrapper around a type to assert that it is trivially movable.
+///
+/// This is useful for types that are naturally trivially movable but cannot be
+/// automatically derived as such due to limitations of the Rust type system.
+///
+/// # Safety
+///
+/// Direct construction of this type is safe, because types that are not
+/// trivially movable cannot be constructed safely without [custom
+/// initializers], which this wrapper delibrately does not support. Thus, an
+/// instance of `AssertTrivialMove<T> where T: !MoveToUninit<IS_TRIVIAL = true>`
+/// cannot be constructed safely, and the safety contract of `MoveToUninit` is
+/// not violated by this wrapper.
+///
+/// # Examples
+///
+/// ```rust
+/// use placid::prelude::*;
+///
+/// let func = own!(AssertTrivialMove(move |x| x + 1));
+/// assert_eq!(func(41), 42);
+/// ```
+///
+/// It can be further destructured using [`munge`](munge::munge!) to get the
+/// inner value, though its moveability would be restricted by the wrapper:
+///
+/// ```rust
+/// use placid::prelude::*;
+///
+/// let func = own!(AssertTrivialMove(move |x| x + 1));
+/// munge::munge!(let AssertTrivialMove(original) = func);
+/// // original: Own<impl Fn(i32) -> i32>
+/// assert_eq!(original(41), 42);
+/// ```
+///
+/// [custom initializers]: crate::init::Init
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct AssertTrivialMove<T: ?Sized>(pub T);
+
+impl<T: ?Sized> Deref for AssertTrivialMove<T> {
+    type Target = T;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: ?Sized> DerefMut for AssertTrivialMove<T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+unsafe impl<T: ?Sized> MoveToUninit for AssertTrivialMove<T> {
+    const IS_TRIVIAL: bool = true;
+
+    #[inline]
+    fn move_to<'d>(from: Fix<Own<'_, Self>>, to: Uninit<'d, Self>) -> Fix<Own<'d, Self>> {
+        let size = size_of_val::<T>(&**from);
+
+        // SAFETY: We are moving the value properly.
+        let src = unsafe { Own::into_raw(Fix::into_inner_unchecked(from)) };
+        let dst = Uninit::into_raw(to);
+
+        assert_eq!(
+            size,
+            // SAFETY: The pointer metadata of `dst` is always valid since `Uninit<T>`
+            // points to a valid uninitialized memory for `Self`.
+            unsafe { size_of_val_raw(dst) },
+            "source slice length does not match destination slice length"
+        );
+
+        let dst = dst.cast::<u8>();
+        // SAFETY: We are moving the value out of `src` and into `dst`.
+        unsafe {
+            ptr::copy_nonoverlapping(src.cast(), dst, size);
+            let ptr = ptr::from_raw_parts_mut(dst, ptr::metadata(src));
+            Fix::new(Own::from_raw(ptr))
+        }
+    }
 }
 
 /// Marks a type as structurally movable.
@@ -120,11 +212,11 @@ pub(crate) const fn assert_trivially_movable<T: MoveToUninit + ?Sized>() {
 /// }
 ///
 /// let src: Own<TestStruct> = own!(init!(TestStruct {
-///     a: init::value(99).and(|i| *i += 1),
+///     a: init::value(99).and(|mut i| *i += 1),
 ///     b: init::with(|| String::from("Hello")),
 /// }));
 /// let dst = uninit!(TestStruct);
-/// let dst = src.move_to(dst);
+/// let dst = Fix::new(src).move_to(dst);
 /// assert_eq!(dst.a, 100);
 /// assert_eq!(dst.b, "Hello");
 /// ```
@@ -136,12 +228,12 @@ macro_rules! impl_trivial_sized {
             const IS_TRIVIAL: bool = true;
 
             #[inline]
-            fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+            fn move_to<'d>(from: Fix<Own<'_, Self>>, mut to: Uninit<'d, Self>) -> Fix<Own<'d, Self>> {
                 let this = ManuallyDrop::new(from);
                 // SAFETY: We are moving the value out of `this` and into `to`.
                 unsafe { ptr::copy_nonoverlapping(&**this, to.as_mut_ptr(), 1) };
                 // SAFETY: `to` is now initialized.
-                unsafe { to.assume_init() }
+                Fix::new(unsafe { to.assume_init() })
             }
         }
     )*};
@@ -236,7 +328,7 @@ impl<T: MoveToUninit> SliceGuard<T> {
         unsafe {
             let ptr = self.ptr.cast::<T>().as_ptr().add(self.init);
             let uninit = Uninit::from_raw(ptr);
-            mem::forget(v.move_to(uninit));
+            mem::forget(T::move_to(Fix::new(v), uninit));
             self.init += 1;
         }
     }
@@ -252,7 +344,9 @@ impl<T: MoveToUninit> SliceGuard<T> {
 unsafe impl<T: MoveToUninit> MoveToUninit for [T] {
     const IS_TRIVIAL: bool = T::IS_TRIVIAL;
 
-    fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+    fn move_to<'d>(from: Fix<Own<'_, Self>>, mut to: Uninit<'d, Self>) -> Fix<Own<'d, Self>> {
+        // SAFETY: We move the value out of `self` structurally.
+        let from = unsafe { Fix::into_inner_unchecked(from) };
         assert_eq!(
             from.len(),
             to.len(),
@@ -262,10 +356,10 @@ unsafe impl<T: MoveToUninit> MoveToUninit for [T] {
         if T::IS_TRIVIAL {
             let this = ManuallyDrop::new(from);
             // SAFETY: We are moving the values out of `from` and into `to`.
-            return unsafe {
+            return Fix::new(unsafe {
                 ptr::copy_nonoverlapping(this.as_ptr(), to.as_mut_ptr().cast::<T>(), this.len());
                 to.assume_init()
-            };
+            });
         }
 
         // SAFETY: We are moving the values out of `from` and into `to`.
@@ -275,21 +369,24 @@ unsafe impl<T: MoveToUninit> MoveToUninit for [T] {
             guard.finish();
         }
         // SAFETY: `to` is now initialized.
-        unsafe { to.assume_init() }
+        Fix::new(unsafe { to.assume_init() })
     }
 }
 
 unsafe impl<T: MoveToUninit, const N: usize> MoveToUninit for [T; N] {
     const IS_TRIVIAL: bool = T::IS_TRIVIAL;
 
-    fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+    fn move_to<'d>(from: Fix<Own<'_, Self>>, mut to: Uninit<'d, Self>) -> Fix<Own<'d, Self>> {
+        // SAFETY: We move the value out of `self` structurally.
+        let from = unsafe { Fix::into_inner_unchecked(from) };
+
         if T::IS_TRIVIAL {
             let this = ManuallyDrop::new(from);
             // SAFETY: We are moving the values out of `from` and into `to`.
-            return unsafe {
+            return Fix::new(unsafe {
                 ptr::copy_nonoverlapping(this.as_ptr(), to.as_mut_ptr().cast::<T>(), N);
                 to.assume_init()
-            };
+            });
         }
 
         // SAFETY: We are moving the values out of `from` and into `to`.
@@ -299,7 +396,7 @@ unsafe impl<T: MoveToUninit, const N: usize> MoveToUninit for [T; N] {
             guard.finish();
         }
         // SAFETY: `to` is now initialized.
-        unsafe { to.assume_init() }
+        Fix::new(unsafe { to.assume_init() })
     }
 }
 
@@ -307,7 +404,9 @@ unsafe impl MoveToUninit for str {
     const IS_TRIVIAL: bool = true;
 
     #[inline]
-    fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+    fn move_to<'d>(from: Fix<Own<'_, Self>>, mut to: Uninit<'d, Self>) -> Fix<Own<'d, Self>> {
+        // SAFETY: We move the value out of `from` structurally.
+        let from = unsafe { Fix::into_inner_unchecked(from) };
         assert_eq!(
             from.len(),
             to.len(),
@@ -315,10 +414,10 @@ unsafe impl MoveToUninit for str {
         );
 
         // SAFETY: We are moving the value out of `from` and into `to`.
-        unsafe {
+        Fix::new(unsafe {
             ptr::copy_nonoverlapping(from.as_ptr(), to.as_mut_ptr().cast::<u8>(), from.len());
             to.assume_init()
-        }
+        })
     }
 }
 
@@ -326,9 +425,9 @@ unsafe impl MoveToUninit for () {
     const IS_TRIVIAL: bool = true;
 
     #[inline]
-    fn move_to<'d>(_: Own<'_, Self>, to: Uninit<'d, Self>) -> Own<'d, Self> {
+    fn move_to<'d>(_: Fix<Own<'_, Self>>, to: Uninit<'d, Self>) -> Fix<Own<'d, Self>> {
         // SAFETY: `to` is now initialized.
-        unsafe { to.assume_init() }
+        Fix::new(unsafe { to.assume_init() })
     }
 }
 
@@ -337,14 +436,16 @@ macro_rules! impl_tuples {
         unsafe impl<$($ty: MoveToUninit),*> MoveToUninit for ($($ty,)*) {
             const IS_TRIVIAL: bool = true $(&& $ty::IS_TRIVIAL)*;
 
-            fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+            fn move_to<'d>(from: Fix<Own<'_, Self>>, mut to: Uninit<'d, Self>)
+                -> Fix<Own<'d, Self>>
+            {
                 if Self::IS_TRIVIAL {
                     let this = ManuallyDrop::new(from);
                     // SAFETY: We are moving the value out of `from` and into `to`.
-                    return unsafe {
-                        ptr::copy_nonoverlapping(Own::as_ptr(&this), to.as_mut_ptr(), 1);
+                    return Fix::new(unsafe {
+                        ptr::copy_nonoverlapping(&**this, to.as_mut_ptr(), 1);
                         to.assume_init()
-                    };
+                    });
                 }
 
                 munge::munge!(let ($($src,)*) = from);
@@ -353,12 +454,12 @@ macro_rules! impl_tuples {
                 // SAFETY: We are moving the values out of `from` and into `to` by each field.
                 // The initialized fields would be properly dropped at their destination if a
                 // panic occurs during the move.
-                unsafe {
-                    $(let $dst = $src.move_to($dst);)*
+                Fix::new(unsafe {
+                    $(let $dst = $ty::move_to($src, $dst);)*
 
                     mem::forget(($($dst),*));
                     to.assume_init()
-                }
+                })
             }
         }
     };
@@ -385,16 +486,18 @@ macro_rules! impl_single_derive {
             const IS_TRIVIAL: bool = T::IS_TRIVIAL;
 
             #[inline]
-            fn move_to<'d>(from: Own<'_, Self>, mut to: Uninit<'d, Self>) -> Own<'d, Self> {
+            fn move_to<'d>(from: Fix<Own<'_, Self>>, mut to: Uninit<'d, Self>)
+                -> Fix<Own<'d, Self>>
+            {
                 // SAFETY: `Self` is #[repr(transparent)] over `T`, so it has the same size
                 // and alignment as `T`. We are moving the value out of `from` and into `to`
                 // by transmuting the references.
-                unsafe {
-                    let src = mem::transmute::<Own<'_, Self>, Own<'_, T>>(from);
+                Fix::new(unsafe {
+                    let src = mem::transmute::<Fix<Own<'_, Self>>, Fix<Own<'_, T>>>(from);
                     let dst = mem::transmute::<Uninit<'_, Self>, Uninit<'_, T>>(to.by_ref());
-                    mem::forget(src.move_to(dst));
+                    mem::forget(T::move_to(src, dst));
                     to.assume_init()
-                }
+                })
             }
         }
     )*};

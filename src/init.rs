@@ -13,6 +13,7 @@
 use core::{convert::Infallible, fmt, pin::Pin};
 
 use crate::{
+    fixed::Fix,
     owned::Own,
     pin::{DropSlot, POwn},
     uninit::Uninit,
@@ -413,7 +414,7 @@ impl<'a, T: ?Sized, E: fmt::Debug> fmt::Debug for InitError<'a, T, E> {
 /// The result type for [initialization].
 ///
 /// [initialization]: crate::init::Init::init
-pub type InitResult<'a, T, E> = Result<Own<'a, T>, InitError<'a, T, E>>;
+pub type InitResult<'a, T, E> = Result<Fix<Own<'a, T>>, InitError<'a, T, E>>;
 
 /// A trait for initializing a place with a value.
 ///
@@ -460,11 +461,11 @@ pub trait Init<T: ?Sized>: InitPin<T> {
     /// ```rust
     /// use placid::prelude::*;
     ///
-    /// let owned: Own<Vec<_>> = own!(init::value(vec![1, 2, 3]).and(|v| v.push(4)));
+    /// let owned: Own<Vec<_>> = own!(init::value(vec![1, 2, 3]).and(|mut v| v.push(4)));
     /// assert_eq!(*owned, vec![1, 2, 3, 4]);
     /// ```
     #[inline]
-    fn and<F: FnOnce(&mut T)>(self, f: F) -> And<Self, F> {
+    fn and<F: FnOnce(Fix<&mut T>)>(self, f: F) -> And<Self, F> {
         and(self, f)
     }
 }
@@ -645,7 +646,7 @@ pub trait StructuralInit<'b>: StructuralInitPin<'b> {
 /// ```rust
 /// use placid::prelude::*;
 ///
-/// #[derive(Init)]
+/// #[derive(Init, Move)]
 /// struct Point {
 ///     x: i32,
 ///     y: i32,
@@ -742,7 +743,7 @@ pub use placid_macro::InitPin;
 /// ```rust
 /// use placid::prelude::*;
 ///
-/// #[derive(Init)]
+/// #[derive(Init, Move)]
 /// struct Point {
 ///     x: i32,
 ///     y: i32,

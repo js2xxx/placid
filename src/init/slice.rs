@@ -6,6 +6,7 @@ use core::{
 };
 
 use crate::{
+    fixed::Fix,
     init::{Init, InitError, InitPin, InitPinResult, InitResult, Initializer, IntoInitPin},
     pin::DropSlot,
     uninit::Uninit,
@@ -215,7 +216,7 @@ impl<T: Clone> Init<[T]> for Repeat<T> {
     fn init(self, mut place: Uninit<'_, [T]>) -> InitResult<'_, [T], Infallible> {
         place.write_filled(self.0);
         // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
+        Ok(unsafe { Fix::new(place.assume_init()) })
     }
 }
 
@@ -235,7 +236,7 @@ impl<T: Clone, const N: usize> Init<[T; N]> for Repeat<T> {
     fn init(self, mut place: Uninit<'_, [T; N]>) -> InitResult<'_, [T; N], Infallible> {
         maybe_uninit_slice(&mut place).write_filled(self.0);
         // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
+        Ok(unsafe { Fix::new(place.assume_init()) })
     }
 }
 
@@ -293,7 +294,7 @@ where
     fn init(self, mut place: Uninit<'_, [T]>) -> InitResult<'_, [T], Infallible> {
         place.write_with(self.0);
         // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
+        Ok(unsafe { Fix::new(place.assume_init()) })
     }
 }
 
@@ -319,7 +320,7 @@ where
     fn init(self, mut place: Uninit<'_, [T; N]>) -> InitResult<'_, [T; N], Infallible> {
         maybe_uninit_slice(&mut place).write_with(self.0);
         // SAFETY: The place is now initialized.
-        Ok(unsafe { place.assume_init() })
+        Ok(unsafe { Fix::new(place.assume_init()) })
     }
 }
 
@@ -468,7 +469,7 @@ macro_rules! derive_from_iter {
         {
             fn init(self, mut place: Uninit<'_, $ty>) -> InitResult<'_, $ty, FromIterError> {
                 match $imp(&mut *place, self.0) {
-                    Ok(()) => Ok(unsafe { place.assume_init() }),
+                    Ok(()) => Ok(unsafe { Fix::new(place.assume_init()) }),
                     Err(err) => Err(InitError { error: err, place }),
                 }
             }
@@ -695,7 +696,7 @@ macro_rules! derive_incremental {
         {
             fn init(self, mut place: Uninit<'_, $ty>) -> InitResult<'_, $ty, Infallible> {
                 $imp(&mut *place, self.0);
-                Ok(unsafe { place.assume_init() })
+                Ok(unsafe { Fix::new(place.assume_init()) })
             }
         }
     )*};

@@ -754,12 +754,26 @@ impl<'a, T, S: PlaceState> FusedIterator for IntoIter<'a, T, S> {}
 mod tests {
     use core::cell::Cell;
 
-    use crate::own;
+    use crate::{
+        fixed::Fix,
+        own,
+        owned::{MoveToUninit, Own},
+        uninit::Uninit,
+    };
 
     #[test]
     fn test_iter_drop() {
+        #[derive(Clone)]
         struct DropCounter<'a> {
             count: &'a Cell<usize>,
+        }
+
+        unsafe impl<'a> MoveToUninit for DropCounter<'a> {
+            const IS_TRIVIAL: bool = true;
+
+            fn move_to<'d>(from: Fix<Own<'_, Self>>, to: Uninit<'d, Self>) -> Fix<Own<'d, Self>> {
+                to.write_fix(from.clone())
+            }
         }
 
         impl<'a> Drop for DropCounter<'a> {

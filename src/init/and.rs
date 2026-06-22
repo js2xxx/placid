@@ -1,8 +1,8 @@
 use core::pin::Pin;
 
 use crate::{
+    fixed::Fix,
     init::{Init, InitPin, InitPinResult, InitResult, Initializer, IntoInit, IntoInitPin},
-    owned::Own,
     pin::DropSlot,
     uninit::Uninit,
 };
@@ -31,7 +31,7 @@ impl<T, I, F> InitPin<T> for And<I, F>
 where
     T: ?Sized,
     I: Init<T>,
-    F: FnOnce(&mut T),
+    F: FnOnce(Fix<&mut T>),
 {
     fn init_pin<'a, 'b>(
         self,
@@ -42,8 +42,8 @@ where
             Ok(own) => own,
             Err(e) => return Err(e.into_pin(slot)),
         };
-        (self.f)(&mut *own);
-        Ok(Own::into_pin(own, slot))
+        (self.f)(own.as_mut());
+        Ok(Fix::into_pin(own, slot))
     }
 }
 
@@ -51,11 +51,11 @@ impl<T, I, F> Init<T> for And<I, F>
 where
     T: ?Sized,
     I: Init<T>,
-    F: FnOnce(&mut T),
+    F: FnOnce(Fix<&mut T>),
 {
     fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, I::Error> {
         let mut own = self.init.init(place)?;
-        (self.f)(&mut *own);
+        (self.f)(own.as_mut());
         Ok(own)
     }
 }
@@ -67,13 +67,13 @@ where
 /// ```rust
 /// use placid::prelude::*;
 ///
-/// let owned: Own<Vec<_>> = own!(init::and(vec![1, 2, 3], |v| v.push(4)));
+/// let owned: Own<Vec<_>> = own!(init::and(vec![1, 2, 3], |mut v| v.push(4)));
 /// assert_eq!(*owned, vec![1, 2, 3, 4]);
 /// ```
 pub fn and<M, I, F, T: ?Sized>(init: I, f: F) -> And<I::Init, F>
 where
     I: IntoInit<T, M>,
-    F: FnOnce(&mut T),
+    F: FnOnce(Fix<&mut T>),
 {
     And { init: init.into_init(), f }
 }

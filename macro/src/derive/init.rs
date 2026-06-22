@@ -437,10 +437,10 @@ fn derive_init(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenSt
             }
         } else {
             quote_spanned! { mixed_site =>
-                ::placid::owned::Own<
+                ::placid::fixed::Fix<::placid::owned::Own<
                     #this_lifetime,
                     #ident<#(#ty_generics),*>,
-                >
+                >>
             }
         };
 
@@ -453,7 +453,7 @@ fn derive_init(input: &DeriveInput, pinned: bool) -> std::result::Result<TokenSt
         } else {
             quote_spanned! { mixed_site =>
                 let uninit = core::ptr::read(&this.uninit);
-                uninit.assume_init()
+                ::placid::fixed::Fix::new(uninit.assume_init())
             }
         };
 

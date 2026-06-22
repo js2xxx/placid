@@ -16,8 +16,9 @@ use core::{
 
 use self::construct::PlaceConstruct;
 use crate::{
+    fixed::Fix,
     init::{IntoInit, IntoInitPin},
-    owned::Own,
+    owned::{MoveToUninit, Own},
     pin::{DropSlot, POwn},
     sealed,
     uninit::Uninit,
@@ -78,6 +79,14 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     /// calling this method. Failing to do so results in undefined behavior.
     /// See [`MaybeUninit::assume_init`] for more details.
     ///
+    /// Additionally, either of the following must hold:
+    ///
+    /// - `T` is trivially movable (i.e., `T: MoveToUninit<IS_TRIVIAL = true>`),
+    ///   or;
+    /// - The value is not moved again after this call, and is properly dropped
+    ///   when no longer needed, which can be guaranteed by wrapping the
+    ///   returned `Own` in a [`Fix`].
+    ///
     /// [`MaybeUninit::assume_init`]: core::mem::MaybeUninit::assume_init
     unsafe fn assume_init(self) -> Self::Init;
 
@@ -106,8 +115,39 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     fn write<'b, M, I>(&'b mut self, init: I) -> Own<'b, T>
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
     {
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `write_fix` instead"
+        );
         Uninit::from_mut(self).write(init)
+    }
+
+    /// Initializes the place with the given initializer and returns a fixed
+    /// owned reference to the initialized value.
+    ///
+    /// This method is a convenience method of [`Uninit::from_mut`] +
+    /// [`Uninit::write_fix`], allowing direct initialization of a place without
+    /// needing to wrap it in an `Uninit` first, which can be directly
+    /// type-inferred by the compiler.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    /// use core::mem::MaybeUninit;
+    ///
+    /// let mut place = MaybeUninit::uninit();
+    /// let owned = Place::write_fix(&mut place, 42);
+    /// assert_eq!(*owned, 42);
+    /// ```
+    #[inline]
+    fn write_fix<'b, M, I>(&'b mut self, init: I) -> Fix<Own<'b, T>>
+    where
+        I: IntoInit<T, M>,
+    {
+        Uninit::from_mut(self).write_fix(init)
     }
 
     /// Initializes the place with the given initializer and returns a pinned
@@ -159,7 +199,13 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     fn init<M, I>(self, init: I) -> Self::Init
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
     {
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `init_fix` instead"
+        );
+
         self.try_init(init).map_err(|(e, _)| e).unwrap()
     }
 
@@ -194,7 +240,13 @@ pub unsafe trait Place<T: ?Sized>: Sized {
     fn try_init<M, I, E>(mut self, init: I) -> Result<Self::Init, (E, Self)>
     where
         I: IntoInit<T, M, Error = E>,
+        T: MoveToUninit,
     {
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `try_init_fix` instead"
+        );
+
         'ok: {
             let err = match Uninit::from_mut(&mut self).try_write(init) {
                 Ok(own) => break 'ok mem::forget(own),
@@ -205,6 +257,78 @@ pub unsafe trait Place<T: ?Sized>: Sized {
         // SAFETY: The place is now initialized, and `own` is forgotten so that the
         // destructor is not run.
         Ok(unsafe { self.assume_init() })
+    }
+
+    /// Initializes the place with the given initializer and returns the same
+    /// place with an initialized state.
+    ///
+    /// This method is similar to [`Uninit::write`], but instead of returning an
+    /// owned reference, it returns the place itself with an initialized state.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let p = Box::<i32>::new_uninit().init(|| 42);
+    /// assert_eq!(*p, 42);
+    /// ```
+    #[inline]
+    fn init_fix<M, I>(self, init: I) -> Fix<Self::Init>
+    where
+        I: IntoInit<T, M>,
+        Self::Init: Deref<Target = T>,
+    {
+        self.try_init_fix(init).map_err(|(e, _)| e).unwrap()
+    }
+
+    /// Tries to initialize the place with the given initializer and returns
+    /// the same place with an initialized state.
+    ///
+    /// This method is similar to [`Uninit::try_write`], but instead of
+    /// returning an owned reference, it returns the place itself with an
+    /// initialized state.
+    ///
+    /// # Errors
+    ///
+    /// If the initialization fails, this method returns a tuple containing the
+    /// error and the original place.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let p = Box::<i32>::new_uninit();
+    /// let result = p.try_init(|| Ok::<_, &str>(42));
+    /// assert!(result.is_ok());
+    /// assert_eq!(*result.unwrap(), 42);
+    ///
+    /// // With a failing initializer
+    /// let p = Box::<i32>::new_uninit();
+    /// let result = p.try_init(|| Err::<i32, &str>("failed"));
+    /// assert!(result.is_err());
+    /// ```
+    #[inline]
+    fn try_init_fix<M, I, E>(mut self, init: I) -> Result<Fix<Self::Init>, (E, Self)>
+    where
+        I: IntoInit<T, M, Error = E>,
+        Self::Init: Deref<Target = T>,
+    {
+        'ok: {
+            let err = match Uninit::from_mut(&mut self).try_write_fix(init) {
+                Ok(own) => break 'ok mem::forget(own),
+                Err(err) => (mem::forget(err.place), err.error).1,
+            };
+            return Err((err, self));
+        }
+        // SAFETY: The place is now initialized, and `own` is forgotten so that the
+        // destructor is not run.
+        Ok(unsafe { Fix::new(self.assume_init()) })
     }
 
     /// Initializes the place with the given initializer and returns the same
@@ -616,6 +740,8 @@ pub struct PlaceRef<'a, #[pointee] T: ?Sized, State: PlaceState> {
 
 // General PlaceRef implementations
 
+impl<'a, T: ?Sized, S: PlaceState> sealed::Sealed for PlaceRef<'a, T, S> {}
+
 // SAFETY: PlaceRef is Send if T is Send.
 unsafe impl<'a, T: ?Sized + Send, S: PlaceState> Send for PlaceRef<'a, T, S> {}
 // SAFETY: PlaceRef is Sync if T is Sync.
@@ -667,6 +793,21 @@ unsafe impl<'a, T: ?Sized, U: ?Sized + 'a, S: PlaceState> munge::Restructure<U>
     unsafe fn restructure(&self, ptr: *mut U) -> Self::Restructured {
         unsafe { PlaceRef::from_inner(NonNull::new_unchecked(ptr)) }
     }
+}
+
+/// A trait for converting from a place.
+///
+/// This trait is sealed and is not intended to be implemented outside of this
+/// crate.
+pub trait FromPlaceMut<'a>: sealed::Sealed + Deref + Sized {
+    /// Converts a mutable reference to a place into `Self`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the provided place is valid for the duration
+    /// of the returned `Self`, and the place itself is valid for the type
+    /// of value that `Self` represents.
+    unsafe fn from_place_mut(place: &'a mut impl Place<Self::Target>) -> Self;
 }
 
 #[cfg(test)]

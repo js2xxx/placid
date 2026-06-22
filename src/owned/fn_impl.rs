@@ -27,6 +27,29 @@ impl<'a, Args: Tuple, F: Fn<Args> + ?Sized> Fn<Args> for Own<'a, F> {
     }
 }
 
+impl<Args: Tuple, F: FnOnce<Args> + ?Sized> FnOnce<Args> for AssertTrivialMove<F> {
+    type Output = F::Output;
+
+    #[inline]
+    extern "rust-call" fn call_once(self, args: Args) -> Self::Output {
+        self.0.call_once(args)
+    }
+}
+
+impl<Args: Tuple, F: FnMut<Args> + ?Sized> FnMut<Args> for AssertTrivialMove<F> {
+    #[inline]
+    extern "rust-call" fn call_mut(&mut self, args: Args) -> Self::Output {
+        self.0.call_mut(args)
+    }
+}
+
+impl<Args: Tuple, F: Fn<Args> + ?Sized> Fn<Args> for AssertTrivialMove<F> {
+    #[inline]
+    extern "rust-call" fn call(&self, args: Args) -> Self::Output {
+        self.0.call(args)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -34,7 +57,8 @@ mod tests {
     #[test]
     fn test_fn() {
         let t = Box::new(1);
-        let my_place: Own<dyn FnOnce(i32) -> i32> = own!(move |x| x + *t);
+        let my_place: Own<AssertTrivialMove<dyn Fn(i32) -> i32>> =
+            own!(AssertTrivialMove(move |x| x + *t));
         let result = my_place(41);
         assert_eq!(result, 42);
     }

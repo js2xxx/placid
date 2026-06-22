@@ -10,7 +10,8 @@ use core::{
 };
 
 use crate::{
-    init::{Init, InitPin, InitPinResult, InitResult, IntoInit, IntoInitPin},
+    fixed::Fix,
+    init::{Init, InitError, InitPin, InitPinResult, InitResult, IntoInit, IntoInitPin},
     owned::{MoveToUninit, Own},
     pin::{DropSlot, POwn},
     place::{IntoIter, Place, PlaceRef, Uninitialized},
@@ -259,6 +260,14 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// The caller must ensure that the value is indeed initialized before
     /// calling this method.
     ///
+    /// Additionally, either of the following must hold:
+    ///
+    /// - `T` is trivially movable (i.e., `T: MoveToUninit<IS_TRIVIAL = true>`),
+    ///   or;
+    /// - The value is not moved again after this call, and is properly dropped
+    ///   when no longer needed, which can be guaranteed by wrapping the
+    ///   returned `Own` in a [`Fix`].
+    ///
     /// # Examples
     ///
     /// ```rust
@@ -333,7 +342,12 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     pub fn write<I, M>(self, init: I) -> Own<'a, T>
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
     {
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `write_fix` instead"
+        );
         self.try_write(init).unwrap()
     }
 
@@ -352,7 +366,56 @@ impl<'a, T: ?Sized> Uninit<'a, T> {
     /// assert!(result.is_ok());
     /// ```
     #[inline]
-    pub fn try_write<I, M>(self, init: I) -> InitResult<'a, T, I::Error>
+    pub fn try_write<I, M>(self, init: I) -> Result<Own<'a, T>, InitError<'a, T, I::Error>>
+    where
+        I: IntoInit<T, M>,
+        T: MoveToUninit,
+    {
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `try_write_fix` instead"
+        );
+        init.into_init().init(self).map(Fix::into_inner)
+    }
+
+    /// Initializes the reference with the given initializer and returns the
+    /// fixed owned reference.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the initializer returns an error.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// let uninit = placid::uninit!(String);
+    /// let owned = uninit.write_fix(String::from("Initialized!"));
+    /// assert_eq!(&*owned, "Initialized!");
+    /// ```
+    #[inline]
+    pub fn write_fix<I, M>(self, init: I) -> Fix<Own<'a, T>>
+    where
+        I: IntoInit<T, M>,
+    {
+        self.try_write_fix(init).unwrap()
+    }
+
+    /// Tries to initialize the reference with the given initializer and returns
+    /// the fixed owned reference.
+    ///
+    /// # Errors
+    ///
+    /// This method returns an error if the initializer fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// let uninit = placid::uninit!(i32);
+    /// let result = uninit.try_write_fix(42);
+    /// assert!(result.is_ok());
+    /// ```
+    #[inline]
+    pub fn try_write_fix<I, M>(self, init: I) -> InitResult<'a, T, I::Error>
     where
         I: IntoInit<T, M>,
     {
@@ -435,11 +498,11 @@ impl<'a, T: ?Sized + MoveToUninit> Uninit<'a, T> {
     ///
     /// let owned = own!(String::from("Hello"));
     /// let uninit = uninit!(String);
-    /// let moved = uninit.move_from(owned);
+    /// let moved = uninit.move_from(Fix::new(owned));
     /// assert_eq!(&*moved, "Hello");
     /// ```
     #[inline]
-    pub fn move_from(self, from: Own<'_, T>) -> Own<'a, T> {
+    pub fn move_from(self, from: Fix<Own<'_, T>>) -> Fix<Own<'a, T>> {
         T::move_to(from, self)
     }
 }

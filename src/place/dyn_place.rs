@@ -5,8 +5,9 @@ use core::{
 };
 
 use crate::{
+    fixed::Fix,
     init::{Init, InitPin, IntoInit, IntoInitPin},
-    owned::Own,
+    owned::{MoveToUninit, Own},
     pin::{DropSlot, DroppingSlot, POwn},
     uninit::Uninit,
 };
@@ -128,6 +129,57 @@ impl<T> DynPlace<T> {
             self.init = false;
             // SAFETY: We checked that the value is initialized.
             Some(unsafe { Own::from_raw(self.data.as_mut_ptr()) })
+        } else {
+            None
+        }
+    }
+
+    /// Returns a fixed reference to the value if initialized, or `None`
+    /// otherwise.
+    #[inline]
+    pub const fn as_fix_ref(self: Fix<&Self>) -> Option<Fix<&T>> {
+        unsafe {
+            // SAFETY: We don't move `data`.
+            let this = self.get_ref();
+            if this.init {
+                // SAFETY: We checked that the value is initialized.
+                Some(Fix::new(this.data.assume_init_ref()))
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Returns a fixed mutable reference to the value if initialized, or
+    /// `None` otherwise.
+    #[inline]
+    pub const fn as_fix_mut(self: Fix<&mut Self>) -> Option<Fix<&mut T>> {
+        unsafe {
+            // SAFETY: We don't move `data`.
+            let this = self.get_unchecked_mut();
+            if this.init {
+                // SAFETY: We checked that the value is initialized.
+                Some(Fix::new(this.data.assume_init_mut()))
+            } else {
+                None
+            }
+        }
+    }
+
+    /// Returns a fixed owned reference to the value if initialized, or
+    /// `None` otherwise.
+    ///
+    /// The ownership of the value is transferred to the returned `Fix<Own<T>>`,
+    /// and the place becomes uninitialized even if the returned reference
+    /// gets [`mem::forget`]ed.
+    #[inline]
+    pub const fn as_fix_own(self: Fix<&mut Self>) -> Option<Fix<Own<'_, T>>> {
+        // SAFETY: We don't move `data`.
+        let this = unsafe { self.get_unchecked_mut() };
+        if this.init {
+            this.init = false;
+            // SAFETY: We checked that the value is initialized.
+            Some(unsafe { Fix::new(Own::from_raw(this.data.as_mut_ptr())) })
         } else {
             None
         }
@@ -259,6 +311,7 @@ impl<T> DynPlace<T> {
     ///
     /// This is a convenience method of `place = DynPlace::new()` for any
     /// `place: DynPlace<T>`.
+    #[inline]
     pub fn drop_in_place(&mut self) {
         if self.init {
             // SAFETY: We checked that the value is initialized.
@@ -269,9 +322,18 @@ impl<T> DynPlace<T> {
 
     /// Drops the value in place if initialized, leaving the place
     /// uninitialized.
+    #[inline]
+    pub fn drop_in_place_fix(self: Fix<&mut Self>) {
+        // SAFETY: We don't move `data`.
+        unsafe { self.get_unchecked_mut().drop_in_place() }
+    }
+
+    /// Drops the value in place if initialized, leaving the place
+    /// uninitialized.
     ///
     /// This is a convenience method of `place.set(DynPlace::new())` for any
     /// `place: Pin<&mut DynPlace<T>>`.
+    #[inline]
     pub fn drop_in_place_pin(self: Pin<&mut Self>) {
         // SAFETY: We don't move `data`.
         unsafe { self.get_unchecked_mut().drop_in_place() }
@@ -303,8 +365,13 @@ impl<T> DynPlace<T> {
     pub fn init<I, M>(&mut self, init: I) -> Own<'_, T>
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
     {
-        self.try_init(init).unwrap()
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `init_fix` instead"
+        );
+        Fix::into_inner(self.init_fix(init))
     }
 
     /// Tries to initialize the place with the given initializer, returning an
@@ -335,13 +402,13 @@ impl<T> DynPlace<T> {
     pub fn try_init<I, M>(&mut self, init: I) -> Result<Own<'_, T>, I::Error>
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
     {
-        self.drop_in_place();
-
-        unsafe {
-            let uninit = Uninit::from_raw(self.data.as_mut_ptr());
-            init.into_init().init(uninit).map_err(|e| e.error)
-        }
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `try_init_fix` instead"
+        );
+        self.try_init_fix(init).map(Fix::into_inner)
     }
 
     /// Initializes the place with the given initializer if uninitialized,
@@ -357,18 +424,107 @@ impl<T> DynPlace<T> {
     pub fn get_or_init<I, M>(&mut self, init: I) -> Own<'_, T>
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
+    {
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `get_or_init_fixed` instead"
+        );
+        Fix::into_inner(self.get_or_init_fix(init))
+    }
+
+    /// Initializes the place with the given initializer, returning a fixed
+    /// owned reference to the value.
+    ///
+    /// This will drop any existing value in the place regardless of any panic
+    /// during initialization.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{prelude::*, place::DynPlace};
+    ///
+    /// let mut place: DynPlace<String> = DynPlace::new();
+    /// let mut s = place.init_fix("Hello".to_string());
+    /// s.push_str(", world!");
+    /// assert_eq!(*s, "Hello, world!");
+    /// drop(s);
+    /// assert_eq!(place.as_deref(), None);
+    /// ```
+    #[inline]
+    pub fn init_fix<I, M>(&mut self, init: I) -> Fix<Own<'_, T>>
+    where
+        I: IntoInit<T, M>,
+    {
+        self.try_init_fix(init).unwrap()
+    }
+
+    /// Tries to initialize the place with the given initializer, returning a
+    /// fixed owned reference to the value.
+    ///
+    /// This will drop any existing value in the place, regardless of any error
+    /// during initialization.
+    ///
+    /// # Errors
+    ///
+    /// This will return an error if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{prelude::*, place::DynPlace};
+    ///
+    /// let mut place: DynPlace<String> = DynPlace::new();
+    /// match place.try_init_fix("Hello".to_string()) {
+    ///     Ok(mut s) => {
+    ///         s.push_str(", world!");
+    ///         assert_eq!(*s, "Hello, world!");
+    ///     }
+    ///     Err(_) => panic!("Initialization failed"),
+    /// }
+    /// assert_eq!(place.as_deref(), None);
+    /// ```
+    pub fn try_init_fix<I, M>(&mut self, init: I) -> Result<Fix<Own<'_, T>>, I::Error>
+    where
+        I: IntoInit<T, M>,
+    {
+        self.drop_in_place();
+
+        unsafe {
+            let uninit = Uninit::from_raw(self.data.as_mut_ptr());
+            init.into_init().init(uninit).map_err(|e| e.error)
+        }
+    }
+
+    /// Initializes the place with the given initializer if uninitialized,
+    /// returning a fixed owned reference to the value.
+    ///
+    /// See also [`DynPlace::init_fix`], which updates the value regardless of
+    /// the initialization state.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the initialization fails.
+    #[inline]
+    pub fn get_or_init_fix<I, M>(&mut self, init: I) -> Fix<Own<'_, T>>
+    where
+        I: IntoInit<T, M>,
     {
         if self.is_init() {
             self.init = false;
             // SAFETY: We checked that the value is initialized.
-            unsafe { Own::from_raw(self.data.as_mut_ptr()) }
+            unsafe { Fix::new(Own::from_raw(self.data.as_mut_ptr())) }
         } else {
-            self.init(init)
+            self.init_fix(init)
         }
     }
 
     /// Initializes the pinned place with the given initializer, returning a
-    /// pinned mutable reference to the value.
+    /// pinned owned reference to the value.
     ///
     /// This will drop any existing value in the place regardless of any panic
     /// during initialization.
@@ -405,7 +561,7 @@ impl<T> DynPlace<T> {
     }
 
     /// Tries to initialize the pinned place with the given initializer,
-    /// returning a pinned mutable reference to the value.
+    /// returning a pinned owned reference to the value.
     ///
     /// This will drop any existing value in the place, regardless of any error
     /// during initialization.
@@ -448,7 +604,7 @@ impl<T> DynPlace<T> {
     }
 
     /// Initializes the pinned place with the given initializer if
-    /// uninitialized, returning a pinned mutable reference to the value.
+    /// uninitialized, returning a pinned owned reference to the value.
     ///
     /// See also [`DynPlace::init_pin`], which updates the value regardless
     /// of the initialization state.
@@ -502,8 +658,13 @@ impl<T> DynPlace<T> {
     pub fn insert<I, M>(&mut self, init: I) -> &mut T
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
     {
-        self.try_insert(init).unwrap()
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `insert_fix` instead"
+        );
+        Fix::into_inner(self.insert_fix(init))
     }
 
     /// Tries to initialize the place with the given initializer, returning a
@@ -533,11 +694,13 @@ impl<T> DynPlace<T> {
     pub fn try_insert<I, M>(&mut self, init: I) -> Result<&mut T, I::Error>
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
     {
-        mem::forget(self.try_init(init)?);
-        self.init = true;
-        // SAFETY: We just initialized the value.
-        Ok(unsafe { self.data.assume_init_mut() })
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `try_insert_fix` instead"
+        );
+        self.try_insert_fix(init).map(Fix::into_inner)
     }
 
     /// Initializes the place with the given initializer if uninitialized,
@@ -555,13 +718,13 @@ impl<T> DynPlace<T> {
     pub fn get_or_insert<I, M>(&mut self, init: I) -> &mut T
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
     {
-        if self.is_init() {
-            // SAFETY: We checked that the value is initialized.
-            unsafe { self.data.assume_init_mut() }
-        } else {
-            self.insert(init)
-        }
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `get_or_insert_fix` instead"
+        );
+        Fix::into_inner(self.get_or_insert_fix(init))
     }
 
     /// Replaces the value in the place with a new initialized value,
@@ -592,6 +755,7 @@ impl<T> DynPlace<T> {
     pub fn replace<I, M>(&mut self, init: I) -> Option<T>
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
     {
         self.try_replace(init).unwrap()
     }
@@ -621,10 +785,89 @@ impl<T> DynPlace<T> {
     pub fn try_replace<I, M>(&mut self, init: I) -> Result<Option<T>, I::Error>
     where
         I: IntoInit<T, M>,
+        T: MoveToUninit,
     {
         let old = self.take();
         self.try_insert(init)?;
         Ok(old)
+    }
+
+    /// Initializes the place with the given initializer, returning a fixed
+    /// mutable reference to the value.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{prelude::*, place::DynPlace};
+    ///
+    /// let mut place: DynPlace<String> = DynPlace::new();
+    /// let mut s = place.insert_fix("Hello".to_string());
+    /// s.push_str(", world!");
+    /// assert_eq!(place.as_deref(), Some("Hello, world!"));
+    /// ```
+    #[inline]
+    pub fn insert_fix<I, M>(&mut self, init: I) -> Fix<&mut T>
+    where
+        I: IntoInit<T, M>,
+    {
+        self.try_insert_fix(init).unwrap()
+    }
+
+    /// Tries to initialize the place with the given initializer, returning a
+    /// fixed mutable reference to the value.
+    ///
+    /// # Errors
+    ///
+    /// This will return an error if the initialization fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::{prelude::*, place::DynPlace};
+    ///
+    /// let mut place: DynPlace<String> = DynPlace::new();
+    /// match place.try_insert_fix("Hello".to_string()) {
+    ///     Ok(mut s) => {
+    ///         s.push_str(", world!");
+    ///         assert_eq!(place.as_deref(), Some("Hello, world!"));
+    ///     }
+    ///     Err(_) => panic!("Initialization failed"),
+    /// }
+    /// ```
+    pub fn try_insert_fix<I, M>(&mut self, init: I) -> Result<Fix<&mut T>, I::Error>
+    where
+        I: IntoInit<T, M>,
+    {
+        mem::forget(self.try_init_fix(init)?);
+        self.init = true;
+        // SAFETY: We just initialized the value.
+        Ok(unsafe { Fix::new(self.data.assume_init_mut()) })
+    }
+
+    /// Initializes the place with the given initializer if uninitialized,
+    /// returning a fixed mutable reference to the value.
+    ///
+    /// See also [`DynPlace::insert_fix`], which updates the value regardless of
+    /// the initialization state.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the initialization fails.
+    #[inline]
+    pub fn get_or_insert_fix<I, M>(&mut self, init: I) -> Fix<&mut T>
+    where
+        I: IntoInit<T, M>,
+    {
+        if self.is_init() {
+            // SAFETY: We checked that the value is initialized.
+            unsafe { Fix::new(self.data.assume_init_mut()) }
+        } else {
+            self.insert_fix(init)
+        }
     }
 
     /// Initializes the pinned place with the given initializer, returning a

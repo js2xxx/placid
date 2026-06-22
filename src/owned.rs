@@ -34,14 +34,14 @@ use core::{
 };
 
 use crate::{
+    fixed::Fix,
     pin::{DropSlot, POwn},
-    place::{IntoIter, Owned, Place, PlaceRef},
+    place::{FromPlaceMut, IntoIter, Owned, Place, PlaceRef},
     uninit::Uninit,
 };
 
 mod ctor;
-pub(crate) use self::ctor::assert_trivially_movable;
-pub use self::ctor::{CloneToUninit, Move, MoveToUninit};
+pub use self::ctor::{AssertTrivialMove, CloneToUninit, Move, MoveToUninit};
 
 /// An owned reference that contains a fully initialized value of type `T`.
 ///
@@ -72,10 +72,21 @@ pub type Own<'a, T> = PlaceRef<'a, T, Owned>;
 #[macro_export]
 #[allow_internal_unstable(super_let)]
 macro_rules! own {
+    (@fix $e:expr) => {{
+        super let mut place = ::core::mem::MaybeUninit::uninit();
+        $crate::place::Place::write_fix(&mut place, $e)
+    }};
     ($e:expr) => {{
         super let mut place = ::core::mem::MaybeUninit::uninit();
         $crate::place::Place::write(&mut place, $e)
     }};
+}
+
+impl<'a, T: ?Sized> FromPlaceMut<'a> for Own<'a, T> {
+    #[inline]
+    unsafe fn from_place_mut(place: &'a mut impl Place<T>) -> Self {
+        unsafe { Own::from_mut(place) }
+    }
 }
 
 impl<'a, T: ?Sized> Deref for Own<'a, T> {
@@ -125,9 +136,10 @@ impl<'a, T: ?Sized> BorrowMut<T> for Own<'a, T> {
 }
 
 impl<'a, T: ?Sized> Own<'a, T> {
-    /// Converts the owned reference into a pinned owned reference. If the value
-    /// inside the place is not `!Unpin`, this ensures that it cannot be moved
-    /// out of the place.
+    /// Converts the owned reference into a pinned owned reference.
+    ///
+    /// If the value inside the place is not `!Unpin`, this ensures that it
+    /// cannot be moved out of the place.
     ///
     /// # Examples
     ///
@@ -314,38 +326,8 @@ impl<'a, T: ?Sized> Own<'a, T> {
         unsafe { inner.drop_in_place() };
         unsafe { Uninit::from_inner(inner) }
     }
-}
-
-impl<'a, T: ?Sized + MoveToUninit> Own<'a, T> {
-    /// Moves the value inside the owned reference into another place, leaving
-    /// the original place uninitialized.
-    ///
-    /// This method calls [`MoveToUninit::move_to`] (`T`'s custom move
-    /// constructor) to perform the move. See the documentation of that trait
-    /// for more details.
-    ///
-    /// This method is effectively a shorthand for
-    /// `to.write(init::move_(self))`.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use placid::prelude::*;
-    ///
-    /// let my_place = own!(String::from("Hello"));
-    /// let uninit = uninit!(String);
-    /// let moved_place = my_place.move_to(uninit);
-    /// assert_eq!(&*moved_place, "Hello");
-    /// ```
-    #[inline]
-    pub fn move_to<'d>(self, to: Uninit<'d, T>) -> Own<'d, T> {
-        T::move_to(self, to)
-    }
 
     /// Takes the value out of the owned reference, leaving it uninitialized.
-    ///
-    /// This method asserts that the type `T` is trivially movable, meaning that
-    /// it can be safely moved out of the place byte-wise.
     ///
     /// # Examples
     ///
@@ -364,7 +346,6 @@ impl<'a, T: ?Sized + MoveToUninit> Own<'a, T> {
     where
         T: Sized,
     {
-        const { assert_trivially_movable::<T>() };
         let inner = this.inner;
         mem::forget(this);
         // SAFETY: We have exclusive ownership of the value, so we can take it out.
@@ -374,9 +355,6 @@ impl<'a, T: ?Sized + MoveToUninit> Own<'a, T> {
     }
 
     /// Takes the value out of the owned reference.
-    ///
-    /// This method asserts that the type `T` is trivially movable, meaning that
-    /// it can be safely moved out of the place byte-wise.
     ///
     /// # Examples
     ///
@@ -392,7 +370,6 @@ impl<'a, T: ?Sized + MoveToUninit> Own<'a, T> {
     where
         T: Sized,
     {
-        const { assert_trivially_movable::<T>() };
         let inner = this.inner;
         mem::forget(this);
         // SAFETY: We have exclusive ownership of the value, so we can take it out.
@@ -492,8 +469,30 @@ impl<'a, T: ?Sized + CloneToUninit> Own<'a, T> {
     /// assert_eq!(&*cloned, "Hello");
     /// ```
     #[inline]
-    pub fn clone<'b>(&self, to: &'b mut impl Place<T>) -> Own<'b, T> {
+    pub fn clone<'b>(&self, to: &'b mut impl Place<T>) -> Own<'b, T>
+    where
+        T: MoveToUninit,
+    {
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `clone_fix` instead"
+        );
         to.write(crate::init::clone(&**self))
+    }
+
+    /// Clones the value inside the owned reference into another place.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// let owned = placid::own!(String::from("Hello"));
+    /// let mut another_place = core::mem::MaybeUninit::uninit();
+    /// let cloned = owned.clone_fix(&mut another_place);
+    /// assert_eq!(&*cloned, "Hello");
+    /// ```
+    #[inline]
+    pub fn clone_fix<'b>(&self, to: &'b mut impl Place<T>) -> Fix<Own<'b, T>> {
+        to.write_fix(crate::init::clone(&**self))
     }
 }
 
@@ -508,9 +507,33 @@ impl<'a, T: Default> Own<'a, T> {
     /// let mut place = core::mem::MaybeUninit::uninit();
     /// let owned: Own<Vec<i32>> = Own::default(&mut place);
     /// assert_eq!(&*owned, &[]);
+    /// ```
     #[inline]
-    pub fn default(place: &'a mut impl Place<T>) -> Self {
+    pub fn default(place: &'a mut impl Place<T>) -> Self
+    where
+        T: MoveToUninit,
+    {
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `default_fix` instead"
+        );
         place.write(T::default)
+    }
+
+    /// Initializes the place with the default value of `T`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let mut place = core::mem::MaybeUninit::uninit();
+    /// let owned: Fix<Own<Vec<i32>>> = Own::default_fix(&mut place);
+    /// assert_eq!(&*owned, &[]);
+    /// ```
+    #[inline]
+    pub fn default_fix(place: &'a mut impl Place<T>) -> Fix<Own<'a, T>> {
+        place.write_fix(T::default)
     }
 }
 
@@ -751,7 +774,14 @@ impl<'a, T, const N: usize> Own<'a, [T; N]> {
 /// [`into_pown!`]: crate::into_pown!
 pub unsafe trait IntoOwn: Deref + Sized {
     /// The type of place associated with this container.
-    type Place: Place<Self::Target, Init = Self>;
+    type Place: Place<Self::Target>;
+
+    /// The target type of the owned reference that can be extracted from this
+    /// container.
+    ///
+    /// Currently, only `Own<'a, T>` and `Fix<Own<'a, T>>` are supported as
+    /// target types, but this may be extended in the future.
+    type IntoOwn<'a, T: ?Sized + 'a>: FromPlaceMut<'a, Target = T>;
 
     /// Converts the container into its associated place wrapping the contained
     /// value.
@@ -759,16 +789,26 @@ pub unsafe trait IntoOwn: Deref + Sized {
     /// This method should not be used directly. Instead, use the [`into_own!`]
     /// macro.
     ///
+    /// The standard implementation should use `Place::from_init` to convert the
+    /// container into a place, which ensures that the place is properly
+    /// initialized with the value inside the container.
+    ///
     /// [`into_own!`]: crate::into_own!
+    fn into_own_place(self) -> Self::Place;
+
+    #[doc(hidden)]
     #[inline]
-    fn into_own_place(self) -> Self::Place {
-        Place::from_init(self)
+    fn into_own_place_marked(self) -> (Self::Place, PhantomData<Self>) {
+        (self.into_own_place(), PhantomData)
     }
 
     #[doc(hidden)]
     #[inline]
-    fn into_own_place_marked(self) -> (Self::Place, PhantomData<Self::Target>) {
-        (self.into_own_place(), PhantomData)
+    unsafe fn from_place_mut_marked<'a>(
+        place: &'a mut Self::Place,
+        _marker: PhantomData<Self>,
+    ) -> Self::IntoOwn<'a, Self::Target> {
+        unsafe { Self::IntoOwn::from_place_mut(place) }
     }
 }
 
@@ -777,14 +817,32 @@ macro_rules! impl_std_alloc {
     (@IMP $ty:ident) => {
         unsafe impl<T, A: Allocator> IntoOwn for $ty<T, A> {
             type Place = $ty<MaybeUninit<T>, A>;
+            type IntoOwn<'a, U: ?Sized + 'a> = Own<'a, U>;
+
+            #[inline]
+            fn into_own_place(self) -> Self::Place {
+                Place::from_init(self)
+            }
         }
 
         unsafe impl<T, A: Allocator> IntoOwn for $ty<[T], A> {
             type Place = $ty<[MaybeUninit<T>], A>;
+            type IntoOwn<'a, U: ?Sized + 'a> = Own<'a, U>;
+
+            #[inline]
+            fn into_own_place(self) -> Self::Place {
+                Place::from_init(self)
+            }
         }
 
         unsafe impl<A: Allocator> IntoOwn for $ty<str, A> {
             type Place = $ty<[MaybeUninit<u8>], A>;
+            type IntoOwn<'a, U: ?Sized + 'a> = Own<'a, U>;
+
+            #[inline]
+            fn into_own_place(self) -> Self::Place {
+                <$ty<[MaybeUninit<u8>], A> as Place<str>>::from_init(self)
+            }
         }
     };
     ($($ty:ident),*) => {
@@ -795,12 +853,16 @@ macro_rules! impl_std_alloc {
 #[cfg(feature = "alloc")]
 impl_std_alloc!(Box, Arc, Rc);
 
-/// Creates an [owned reference] from a container, extracting the contained
-/// value.
+/// Creates a possibly-fixed [owned reference] from a container, extracting the
+/// contained value.
 ///
 /// The macro converts the given expression into an owned place by extracting
 /// the value inside the container. The resulting owned reference can be used
 /// like any other `&own T`.
+///
+/// If the given expression is a [fixed] container, the resulting owned
+/// reference will also be fixed. Otherwise, the movability of the resulting
+/// owned reference is not constrained.
 ///
 /// For the pinned counterpart, see the [`into_pown!`] macro.
 ///
@@ -834,13 +896,14 @@ impl_std_alloc!(Box, Arc, Rc);
 ///
 /// [owned reference]: crate::owned::Own
 /// [`into_pown!`]: crate::into_pown!
+/// [fixed]: crate::fixed::Fix
 #[macro_export]
 #[allow_internal_unstable(super_let)]
 macro_rules! into_own {
     ($p:ident <- $e:expr) => {{
         let m;
         ($p, m) = $crate::owned::IntoOwn::into_own_place_marked($e);
-        unsafe { $crate::owned::Own::from_mut_marked(&mut $p, m) }
+        unsafe { $crate::owned::IntoOwn::from_place_mut_marked(&mut $p, m) }
     }};
     ($e:expr) => {{
         super let mut p;
@@ -869,6 +932,7 @@ impl<'a, T> Own<'a, Option<T>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::place::construct::PlaceNew;
 
     #[test]
     fn test_place_macro() {
@@ -889,7 +953,7 @@ mod tests {
     #[test]
     fn test_into_own() {
         let mut my_place;
-        let owned = into_own!(my_place <- Box::new(55));
+        let owned = into_own!(my_place <- Box::fix_with(55));
         assert_eq!(*owned, 55);
         drop(owned);
         my_place.write(123);

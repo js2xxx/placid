@@ -72,11 +72,11 @@ macro_rules! derive_value_wrapper {
         impl<'a, T: ?Sized> $unpin<'a, T, true> {
             #[inline]
             #[doc(hidden)]
-            pub fn __build(self) -> Own<'a, $ty<T>> {
+            pub fn __build(self) -> Fix<Own<'a, $ty<T>>> {
                 let this = mem::ManuallyDrop::new(self);
                 unsafe {
                     let uninit = core::ptr::read(&this.uninit);
-                    uninit.assume_init()
+                    Fix::new(uninit.assume_init())
                 }
             }
         }
@@ -203,8 +203,8 @@ pub struct InitPhantomPinned<'a> {
 impl<'a> InitPhantomPinned<'a> {
     #[inline]
     #[doc(hidden)]
-    pub fn __build(self) -> Own<'a, PhantomPinned> {
-        unsafe { self.uninit.assume_init() }
+    pub fn __build(self) -> Fix<Own<'a, PhantomPinned>> {
+        unsafe { Fix::new(self.uninit.assume_init()) }
     }
 }
 

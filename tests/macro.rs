@@ -18,7 +18,7 @@ fn test_build() {
     let pown: POwn<TestStruct> = pown!(init_pin!(
         #[err_into(core::convert::Infallible)]
         TestStruct {
-            a: init::value(99).and(|i| *i += 1),
+            a: init::value(99).and(|mut i| *i += 1),
             b: init::with(|| String::from("Hello")),
         }
     ));
@@ -32,6 +32,7 @@ fn test_drop() {
         static DROPPED: Cell<bool> = const { Cell::new(false) };
     }
 
+    #[derive(Move)]
     struct DropTracker;
     impl Drop for DropTracker {
         fn drop(&mut self) {
@@ -39,7 +40,7 @@ fn test_drop() {
         }
     }
 
-    #[derive(Init)]
+    #[derive(Init, Move)]
     struct TestDrop {
         tracker: DropTracker,
         bomb: u32,

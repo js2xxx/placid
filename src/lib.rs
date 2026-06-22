@@ -39,7 +39,7 @@
 //! let simple = own!(42);
 //! assert_eq!(*simple, 42);
 //!
-//! #[derive(Init)]
+//! #[derive(Init, Move)]
 //! struct LargeData {
 //!     buffer: [u8; 1024],
 //! }
@@ -264,8 +264,9 @@
 )]
 #![feature(allocator_api)]
 #![feature(allow_internal_unstable)]
+#![feature(arbitrary_self_types)]
 #![feature(auto_traits, negative_impls)]
-#![feature(derive_coerce_pointee)]
+#![feature(coerce_unsized, derive_coerce_pointee, dispatch_from_dyn)]
 #![feature(dropck_eyepatch)]
 #![feature(exact_div)]
 #![feature(layout_for_ptr, clone_to_uninit)]
@@ -279,8 +280,30 @@ extern crate alloc;
 #[cfg(any(test, feature = "std"))]
 extern crate std;
 
+/// Assert that a type is trivially movable at compile time.
+#[macro_export]
+macro_rules! assert_trivially_movable {
+    ($ty:ty) => {
+        const {
+            assert!(
+                <$ty as $crate::owned::MoveToUninit>::IS_TRIVIAL,
+                "the target type is not trivially movable"
+            );
+        }
+    };
+    ($ty:ty, $($t:tt)*) => {
+        const {
+            assert!(
+                <$ty as $crate::owned::MoveToUninit>::IS_TRIVIAL,
+                $($t)*
+            );
+        }
+    };
+}
+
 pub mod place;
 
+pub mod fixed;
 pub mod owned;
 pub mod pin;
 pub mod uninit;
@@ -307,9 +330,10 @@ pub mod prelude {
     //! ```
 
     pub use crate::{
+        fixed::Fix,
         init::{self, Init, InitPin, Initializer, IntoInit, IntoInitPin, init, init_pin},
         into_own, into_pown, own,
-        owned::{IntoOwn, Move, Own},
+        owned::{AssertTrivialMove, IntoOwn, Move, Own},
         pin::POwn,
         place::{Place, construct::*},
         pown, uninit,

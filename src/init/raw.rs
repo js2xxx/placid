@@ -1,6 +1,7 @@
 use core::{convert::Infallible, marker::PhantomData};
 
 use crate::{
+    fixed::Fix,
     init::{Init, InitPin, InitPinResult, InitResult, Initializer},
     owned::Own,
     pin::{DropSlot, POwn},
@@ -74,7 +75,7 @@ where
         slot: DropSlot<'a, 'b, T>,
     ) -> InitPinResult<'a, 'b, T, E> {
         match (self.0)(place) {
-            Ok(own) => Ok(Own::into_pin(own, slot)),
+            Ok(own) => Ok(Fix::into_pin(own, slot)),
             Err(err) => Err(err.into_pin(slot)),
         }
     }
@@ -162,7 +163,7 @@ impl<T: ?Sized, F> Initializer for Raw<F, T> {
 
 impl<T: ?Sized, F> InitPin<T> for Raw<F, T>
 where
-    F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
+    F: FnOnce(Uninit<'_, T>) -> Fix<Own<'_, T>>,
 {
     #[inline]
     fn init_pin<'a, 'b>(
@@ -170,13 +171,13 @@ where
         place: Uninit<'a, T>,
         slot: DropSlot<'a, 'b, T>,
     ) -> InitPinResult<'a, 'b, T, Infallible> {
-        Ok(Own::into_pin((self.0)(place), slot))
+        Ok(Fix::into_pin((self.0)(place), slot))
     }
 }
 
 impl<T: ?Sized, F> Init<T> for Raw<F, T>
 where
-    F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
+    F: FnOnce(Uninit<'_, T>) -> Fix<Own<'_, T>>,
 {
     #[inline]
     fn init(self, place: Uninit<'_, T>) -> InitResult<'_, T, Infallible> {
@@ -194,7 +195,7 @@ where
 #[inline]
 pub const fn raw<T: ?Sized, F>(f: F) -> Raw<F, T>
 where
-    F: FnOnce(Uninit<'_, T>) -> Own<'_, T>,
+    F: FnOnce(Uninit<'_, T>) -> Fix<Own<'_, T>>,
 {
     Raw(f, PhantomData)
 }

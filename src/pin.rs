@@ -34,7 +34,8 @@ use core::{
 };
 
 use crate::{
-    owned::{CloneToUninit, Own},
+    fixed::Fix,
+    owned::{CloneToUninit, MoveToUninit, Own},
     place::Place,
     uninit::Uninit,
 };
@@ -454,8 +455,35 @@ impl<'a, T: CloneToUninit> POwn<'a, T> {
     /// assert_eq!(&*cloned, "hello");
     /// ```
     #[inline]
-    pub fn clone<'p>(&self, to: &'p mut impl Place<T>) -> Own<'p, T> {
+    pub fn clone<'p>(&self, to: &'p mut impl Place<T>) -> Own<'p, T>
+    where
+        T: MoveToUninit,
+    {
+        assert_trivially_movable!(
+            T,
+            "the type is not trivially movable; use `clone_fix` instead"
+        );
         to.write(crate::init::clone(&**self))
+    }
+
+    /// Clones the value inside the pinned owned reference into another place.
+    ///
+    /// This method creates a new owned reference by cloning the value from the
+    /// current pinned reference into the specified place.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use placid::prelude::*;
+    ///
+    /// let pinned = placid::pown!(String::from("hello"));
+    /// let mut place = core::mem::MaybeUninit::uninit();
+    /// let cloned: Own<String> = pinned.clone(&mut place);
+    /// assert_eq!(&*cloned, "hello");
+    /// ```
+    #[inline]
+    pub fn clone_fix<'p>(&self, to: &'p mut impl Place<T>) -> Fix<Own<'p, T>> {
+        to.write_fix(crate::init::clone(&**self))
     }
 }
 
@@ -595,8 +623,8 @@ macro_rules! into_pown {
         let init = unsafe { Pin::into_inner_unchecked(pinned) };
         ($p, m) = $crate::owned::IntoOwn::into_own_place_marked(init);
         unsafe {
-            let own = $crate::owned::Own::from_mut_marked(&mut $p, m);
-            $crate::owned::Own::into_pin(own, $slot)
+            let own = $crate::owned::IntoOwn::from_place_mut_marked(&mut $p, m);
+            $crate::fixed::Fix::into_pin(own, $slot)
         }
     }};
     ($p:ident <- $e:expr) => {{
@@ -610,8 +638,8 @@ macro_rules! into_pown {
         let init = unsafe { Pin::into_inner_unchecked(pinned) };
         ($p, m) = $crate::owned::IntoOwn::into_own_place_marked(init);
         unsafe {
-            let own = $crate::owned::Own::from_mut_marked(&mut $p, m);
-            $crate::owned::Own::into_pin(own, slot)
+            let own = $crate::owned::IntoOwn::from_place_mut_marked(&mut $p, m);
+            $crate::fixed::Fix::into_pin(own, slot)
         }
     }};
     ($e:expr) => {{

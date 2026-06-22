@@ -61,6 +61,7 @@ pub fn move_(input: &DeriveInput) -> syn::Result<TokenStream> {
 
     let krate = quote!(::placid);
     let trait_path = quote!(#krate::owned::MoveToUninit);
+    let fix = quote!(#krate::fixed::Fix);
     let own = quote!(#krate::owned::Own);
     let uninit = quote!(#krate::uninit::Uninit);
     let munge = quote!(#krate::munge::munge);
@@ -81,12 +82,13 @@ pub fn move_(input: &DeriveInput) -> syn::Result<TokenStream> {
         {
             const IS_TRIVIAL: bool = true #(&& <#field_ty as #trait_path>::IS_TRIVIAL)*;
 
+            #[allow(clippy::unused_unit)]
             fn move_to<#lt>(
-                from: #own<'_, Self>,
+                from: #fix<#own<'_, Self>>,
                 mut #dst: #uninit<#lt, Self>,
-            ) -> #own<#lt, Self> {
+            ) -> #fix<#own<#lt, Self>> {
                 if const { <Self as #trait_path>::IS_TRIVIAL } {
-                    let this = core::mem::ManuallyDrop::new(from);
+                    let this = core::mem::ManuallyDrop::new(#fix::into_inner(from));
                     // SAFETY: We are moving the value out of `from` and into `#dst`.
                     return unsafe {
                         core::ptr::copy_nonoverlapping(
@@ -94,7 +96,7 @@ pub fn move_(input: &DeriveInput) -> syn::Result<TokenStream> {
                             #dst.as_mut_ptr(),
                             1,
                         );
-                        #dst.assume_init()
+                        #fix::new(#dst.assume_init())
                     };
                 }
 
@@ -105,10 +107,11 @@ pub fn move_(input: &DeriveInput) -> syn::Result<TokenStream> {
                 // The initialized fields would be properly dropped at their destination if a
                 // panic occurs during the move.
                 unsafe {
-                    #(let #field_name_dst = #field_name_src.move_to(#field_name_dst);)*
+                    #(let #field_name_dst =
+                        <#field_ty as #trait_path>::move_to(#field_name_src, #field_name_dst);)*
 
                     ::core::mem::forget((#(#field_name_dst,)*));
-                    #dst.assume_init()
+                    #fix::new(#dst.assume_init())
                 }
             }
         }
