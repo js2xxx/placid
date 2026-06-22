@@ -64,21 +64,20 @@ impl<T: ?Sized + core::clone::CloneToUninit> CloneToUninit for T {
 /// The implemented type may not be `Sized`.
 ///
 /// Trivially movable types are expected to implement `MoveToUninit` with
-/// `IS_TRIVIAL = true` and perform a byte-wise move in `move_to`, but
-/// users may find it necessary to implement it manually due to the limitations
-/// of the Rust type system.
+/// `IS_TRIVIAL = true` and perform a byte-wise move in `move_to`, but users may
+/// find it necessary to implement or [assert] it manually due to the
+/// limitations of the Rust type system.
 ///
 /// For structs that inherit their default move semantics from their fields, the
 /// [`Move`] macro can be used to automatically generate the implementation by
-/// recursively calling `move_to` on each field. The generated
-/// implementation will be optimized to perform a byte-wise move if all fields
-/// are trivially movable.
+/// recursively calling `move_to` on each field. The generated implementation
+/// will be optimized to perform a byte-wise move if all fields are trivially
+/// movable.
 ///
 /// # Safety
 ///
-/// Implementors must ensure that the `move_to` method performs a
-/// byte-wise move of the value from `from` into `to` as long as
-/// `Self::IS_TRIVIAL` is `true`.
+/// Implementors must ensure that the `move_to` method performs a byte-wise move
+/// of the value from `from` into `to` as long as `Self::IS_TRIVIAL` is `true`.
 ///
 /// The behavior is not constrained when `Self::IS_TRIVIAL` is `false`, but it
 /// is recommended to still perform a move-like operation to avoid unexpected
@@ -88,8 +87,10 @@ impl<T: ?Sized + core::clone::CloneToUninit> CloneToUninit for T {
 /// type that is `Copy`, but enforces via a safety contract.
 ///
 /// [`Move`]: crate::owned::Move
+/// [assert]: crate::owned::AssertTrivialMove
 #[diagnostic::on_unimplemented(
-    note = "implement `MoveToUninit` for `{Self}` manually or `#[derive(Move)]`"
+    note = "implement `MoveToUninit` for `{Self}` manually, `#[derive(Move)]`, or \
+           wrap it in `AssertTrivialMove` if it is trivially movable"
 )]
 pub unsafe trait MoveToUninit {
     /// Whether the type is trivially movable, meaning that a byte-wise move is
@@ -117,12 +118,23 @@ pub unsafe trait MoveToUninit {
 ///
 /// # Safety
 ///
-/// Direct construction of this type is safe, because types that are not
-/// trivially movable cannot be constructed safely without [custom
-/// initializers], which this wrapper delibrately does not support. Thus, an
-/// instance of `AssertTrivialMove<T> where T: !MoveToUninit<IS_TRIVIAL = true>`
-/// cannot be constructed safely, and the safety contract of `MoveToUninit` is
-/// not violated by this wrapper.
+/// `AssertTrivialMove<T>` asserts [trivial movability] for *any* `T`, so safe
+/// code may relocate the wrapped value with a plain `memcpy` (and hand out
+/// `&mut T`, `mem::swap` it, and so on).
+///
+/// This is sound because the only way to obtain an `AssertTrivialMove<T>` in
+/// safe code is to wrap a `T` that is **already owned by value** (via the
+/// `AssertTrivialMove(_)` constructor, plus unsizing coercions and clones of
+/// such a value). This wrapper deliberately provides no [`Init`] / [`InitPin`]
+/// or pinning projection, so it can never be built *in place* around a value
+/// that lives only behind a [`Fix`] or [`POwn`], nor hand out a durable
+/// [`Pin`]`<&mut T>` with which to install an address-dependent invariant. And
+/// by Rust's move semantics, every by-value value is already
+/// `memcpy`-relocatable: there are no move constructors, and `Pin` restricts
+/// *access* to a value, never the movability of its bytes. A value whose
+/// soundness depends on its own address therefore cannot be held by value, and
+/// so can never reach this wrapper, which is what justifies `IS_TRIVIAL = true`
+/// for whatever `T` actually ends up inside.
 ///
 /// # Examples
 ///
@@ -145,7 +157,12 @@ pub unsafe trait MoveToUninit {
 /// assert_eq!(original(41), 42);
 /// ```
 ///
-/// [custom initializers]: crate::init::Init
+/// [`Pin`]: core::pin::Pin
+/// [`Fix`]: crate::fixed::Fix
+/// [`POwn`]: crate::pin::POwn
+/// [`Init`]: crate::init::Init
+/// [`InitPin`]: crate::init::InitPin
+/// [trivial movability]: crate::owned::MoveToUninit::IS_TRIVIAL
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct AssertTrivialMove<T: ?Sized>(pub T);
