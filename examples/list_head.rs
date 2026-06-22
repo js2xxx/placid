@@ -23,8 +23,8 @@ impl ListHead {
     #[inline]
     pub const fn new() -> impl InitPin<Self, Error = Infallible> {
         init_pin!(|this| ListHead {
-            next: unsafe { Link::new_unchecked(this) },
-            prev: unsafe { Link::new_unchecked(this) },
+            next: unsafe { Link::new_unchecked(this.as_non_null()) },
+            prev: unsafe { Link::new_unchecked(this.as_non_null()) },
             #[pin]
             pin: PhantomPinned,
         })
@@ -32,21 +32,27 @@ impl ListHead {
 
     #[inline]
     pub const fn insert_next(&self) -> impl InitPin<Self, Error = Infallible> {
-        init_pin!(|this| ListHead {
-            prev: (self.next.prev()).replace(unsafe { Link::new_unchecked(this) }),
-            next: self.next.replace(unsafe { Link::new_unchecked(this) }),
-            #[pin]
-            pin: PhantomPinned,
+        init_pin!(|this| {
+            let ptr = this.as_non_null();
+            ListHead {
+                prev: (self.next.prev()).replace(unsafe { Link::new_unchecked(ptr) }),
+                next: self.next.replace(unsafe { Link::new_unchecked(ptr) }),
+                #[pin]
+                pin: PhantomPinned,
+            }
         })
     }
 
     #[inline]
     pub const fn insert_prev(&self) -> impl InitPin<Self, Error = Infallible> {
-        init_pin!(|this| ListHead {
-            next: (self.prev.next()).replace(unsafe { Link::new_unchecked(this) }),
-            prev: self.prev.replace(unsafe { Link::new_unchecked(this) }),
-            #[pin]
-            pin: PhantomPinned,
+        init_pin!(|this| {
+            let ptr = this.as_non_null();
+            ListHead {
+                next: (self.prev.next()).replace(unsafe { Link::new_unchecked(ptr) }),
+                prev: self.prev.replace(unsafe { Link::new_unchecked(ptr) }),
+                #[pin]
+                pin: PhantomPinned,
+            }
         })
     }
 

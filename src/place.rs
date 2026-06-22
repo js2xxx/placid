@@ -14,6 +14,7 @@ use core::{
     ptr::{self, NonNull},
 };
 
+#[cfg(feature = "alloc")]
 use self::construct::PlaceConstruct;
 use crate::{
     fixed::Fix,

@@ -550,9 +550,10 @@ pub use self::value::{
     CloneInit, MoveInit, TryWith, Value, ValueError, With, clone, move_, try_with, value, with,
 };
 
-// Implemetations for the standard library types
+// Implemetations for the standard library types and utilities.
 
 mod imp;
+pub use self::imp::ThisPtr;
 
 // Structural initializers
 
@@ -713,6 +714,10 @@ pub use placid_macro::InitPin;
 ///
 /// ```ignore
 /// init!(
+///     // Optional self reference for recursive initialization.
+///     // The type of `this` is always `ThisPtr<'_, T>`, which can be
+///     // omitted if the compiler can infer it from the context.
+///     |this: ThisPtr<'_, TypeName>|
 ///     // Specify an optional error type for
 ///     // sub-initializers to convert into.
 ///     // Otherwise, no conversion is performed.
@@ -721,14 +726,23 @@ pub use placid_macro::InitPin;
 ///         field: initializer,
 ///         // Sub-initializers can also have their own error types.
 ///         #[err_into(SubErrorType)]
-///         nested: NestedType {
-///             subfield: initializer,
-///             ...
-///         }
+///         nested: {
+///             // Initializers can also be blocks, which allows for more complex
+///             // initialization logic and multiple statements. The block will be
+///             // converted into an initializer block if last expression of the
+///             // block is an initializer.
+///             // Early returns of initializer blocks are not recommended, as the
+///             // error type would be unconstructable in the context.
+///             statements...;
+///             NestedType {
+///                 subfield: initializer,
+///                 ...
+///             }
+///         },
 ///         // Mark `err_into` without an argument to indicate
 ///         // automatic `Into::into`.
 ///         #[err_into]
-///         nested2: Tuple(initializer, ...),
+///         nested2: |nested2| Tuple(initializer, ...),
 ///         ...
 ///     }
 /// )
@@ -768,6 +782,10 @@ pub use placid_macro::init;
 ///
 /// ```ignore
 /// init_pin!(
+///     // Optional self reference for recursive initialization.
+///     // The type of `this` is always `ThisPtr<'_, T>`, which can be
+///     // omitted if the compiler can infer it from the context.
+///     |this: ThisPtr<'_, TypeName>|
 ///     // Specify an optional error type for
 ///     // sub-initializers to convert into.
 ///     // Otherwise, no conversion is performed.
@@ -776,16 +794,25 @@ pub use placid_macro::init;
 ///         field: initializer,
 ///         // Sub-initializers can also have their own error types.
 ///         #[err_into(SubErrorType)]
-///         nested: NestedType {
-///             subfield: initializer,
-///             ...
-///         }
+///         nested: {
+///             // Initializers can also be blocks, which allows for more complex
+///             // initialization logic and multiple statements. The block will be
+///             // converted into an initializer block if last expression of the
+///             // block is an initializer.
+///             // Early returns of initializer blocks are not recommended, as the
+///             // error type would be unconstructable in the context.
+///             statements...;
+///             NestedType {
+///                 subfield: initializer,
+///                 ...
+///             }
+///         },
 ///         // Pinned fields must be marked with `#[pin]`.
 ///         #[pin]
 ///         // Mark `err_into` without an argument to indicate
 ///         // automatic `Into::into`.
 ///         #[err_into]
-///         nested2: Tuple(initializer, ...),
+///         nested2: |nested2| Tuple(initializer, ...),
 ///         ...
 ///     }
 /// )

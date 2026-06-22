@@ -124,7 +124,7 @@ assert_eq!(&*right, "new val");
 
 `Fix<P>` fixes the value behind a pointer `P` to its memory location, just like `Pin<P>`. The difference is that it makes *one fewer promise*: the value need not stay valid at its location until it is dropped. Dropping that requirement means a fixed value can be safely leaked or forgotten, and a `Fix<&mut T>` can be created safely from a plain `&mut T`.
 
-In return, `Fix` only prevents the value from being *moved out* of its place: it never exposes a `&mut T` (nor unwraps its inner pointer) unless the target type is *trivially movable*, with `MoveToUninit` acting as the `Unpin`-like opt-out. This is what makes in-place construction sound — every initializer returns a `Fix<Own<T>>`, so a freshly built value is guaranteed to stay put even before its custom move/drop logic runs. Structural projection works out of the box through the `munge` crate.
+In return, `Fix` only prevents the value from being *moved out* of its place: it never exposes a `&mut T` (nor unwraps its inner pointer) unless the target type is *trivially movable*, with `MoveToUninit` acting as the `Unpin`-like opt-out. This is what makes in-place construction sound: every initializer returns a `Fix<Own<T>>`, so a freshly built value is guaranteed to stay put even before its custom move/drop logic runs. Structural projection works out of the box through the `munge` crate.
 
 ```rust
 use placid::prelude::*;

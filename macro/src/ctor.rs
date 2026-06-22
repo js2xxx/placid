@@ -3,8 +3,8 @@ use std::mem;
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote, quote_spanned};
 use syn::{
-    Attribute, Block, Expr, ExprCall, ExprPath, Meta, Pat, PatIdent, Stmt, Type, parse_quote,
-    visit_mut::VisitMut,
+    Attribute, Block, Expr, ExprCall, ExprPath, Meta, Pat, PatIdent, PatType, Stmt, Type,
+    parse_quote, visit_mut::VisitMut,
 };
 
 fn char_has_case(c: char) -> bool {
@@ -68,7 +68,7 @@ fn possible_initializer(e: &Expr) -> bool {
 #[derive(Default)]
 struct InitVisit {
     pinned: bool,
-    this_ptr: Option<PatIdent>,
+    this_ptr: Option<(PatIdent, Option<Type>)>,
     pre_stmts: Vec<Stmt>,
     err_ty: Option<Option<Type>>,
     err: Option<syn::Error>,
@@ -144,6 +144,8 @@ impl InitVisit {
             Expr::Path(path) if possible_struct_name(path) => Some(&mut path.attrs),
             Expr::Call(call) if possible_struct_call(call) => Some(&mut call.attrs),
             Expr::Struct(ctor) => Some(&mut ctor.attrs),
+            Expr::Block(b) if possible_trailing_block(&b.block) => Some(&mut b.attrs),
+            Expr::Closure(c) if possible_initializer(&c.body) => Some(&mut c.attrs),
             _ => None,
         } {
             Some(attrs) => self.scan_attribute(attrs, scan_pin),
@@ -229,7 +231,12 @@ impl VisitMut for InitVisit {
                 if possible_initializer(&closure.body)
                     && let Some(Some(tp)) =
                         closure.inputs.iter().try_fold(None, |acc, i| match acc {
-                            None if let Pat::Ident(input) = i => Some(Some(input.clone())),
+                            None if let Pat::Ident(input) = i => Some(Some((input.clone(), None))),
+                            None if let Pat::Type(PatType { pat, ty, .. }) = i
+                                && let Pat::Ident(input) = &**pat =>
+                            {
+                                Some(Some((input.clone(), Some((**ty).clone()))))
+                            }
                             _ => None,
                         }) =>
             {
@@ -249,14 +256,25 @@ impl VisitMut for InitVisit {
             quote_spanned! { span => ::<_, _, _> }
         };
 
-        let this_ptr = self.this_ptr.iter();
+        let this_ptr = self.this_ptr.iter().map(|(pat, ty)| match ty {
+            Some(ty) => quote!(#pat: #ty),
+            None => quote!(#pat),
+        });
         let pre_stmts = self.pre_stmts.iter();
+
+        let this_ptr = quote_spanned! { span => #(
+            let mut __scope = ();
+            let #this_ptr = unsafe { ::placid::init::ThisPtr::new_scoped(
+                ::placid::uninit::Uninit::as_non_null(&mut uninit),
+                &mut __scope,
+            ) };
+        )* };
 
         *expr = if self.pinned {
             syn::parse_quote_spanned! { span =>
                 #(#attrs)*
                 ::placid::init::try_raw_pin #generics(move |mut uninit, slot| {
-                    #(let #this_ptr = ::placid::uninit::Uninit::as_non_null(&mut uninit);)*
+                    #this_ptr
                     #(#pre_stmts)*
 
                     use ::placid::init::StructuralInitPin;
@@ -269,7 +287,7 @@ impl VisitMut for InitVisit {
             syn::parse_quote_spanned! { span =>
                 #(#attrs)*
                 ::placid::init::try_raw #generics(move |mut uninit| {
-                    #(let #this_ptr = ::placid::uninit::Uninit::as_non_null(&mut uninit);)*
+                    #this_ptr
                     #(#pre_stmts)*
 
                     use ::placid::init::StructuralInit;

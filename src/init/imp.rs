@@ -1,7 +1,8 @@
 use core::{
     cell::{Cell, UnsafeCell},
-    marker::PhantomPinned,
+    marker::{PhantomData, PhantomPinned},
     mem::{self, ManuallyDrop},
+    ptr::NonNull,
 };
 
 use crate::{init::*, pin::DropSlot, uninit::Uninit};
@@ -245,5 +246,170 @@ impl<'b> StructuralInitPin<'b> for PhantomPinned {
         Self: 'a,
     {
         InitPinPhantomPinned { uninit, slot }
+    }
+}
+
+#[doc(hidden)]
+pub struct InitPhantomData<'a, T: ?Sized> {
+    uninit: Uninit<'a, PhantomData<T>>,
+}
+
+impl<'a, T: ?Sized> InitPhantomData<'a, T> {
+    #[inline]
+    #[doc(hidden)]
+    pub fn __build(self) -> Fix<Own<'a, PhantomData<T>>> {
+        unsafe { Fix::new(self.uninit.assume_init()) }
+    }
+}
+
+impl<'a, T: ?Sized + 'a> StructuralInit<'a> for PhantomData<T> {
+    type __BuilderInit = InitPhantomData<'a, T>;
+    #[inline]
+    fn __builder_init(uninit: Uninit<'a, PhantomData<T>>) -> InitPhantomData<'a, T> {
+        InitPhantomData { uninit }
+    }
+}
+
+#[doc(hidden)]
+pub struct InitPinPhantomData<'a, 'b, T: ?Sized> {
+    uninit: Uninit<'a, PhantomData<T>>,
+    slot: DropSlot<'a, 'b, PhantomData<T>>,
+}
+
+impl<'a, 'b, T: ?Sized> InitPinPhantomData<'a, 'b, T> {
+    #[inline]
+    #[doc(hidden)]
+    pub fn __build(self) -> POwn<'b, PhantomData<T>> {
+        unsafe { self.uninit.assume_init_pin(self.slot) }
+    }
+}
+
+impl<'b, T: ?Sized> StructuralInitPin<'b> for PhantomData<T> {
+    type __BuilderInitPin<'a: 'b>
+        = InitPinPhantomData<'a, 'b, T>
+    where
+        Self: 'a;
+
+    #[inline]
+    fn __builder_init_pin<'a>(
+        uninit: Uninit<'a, PhantomData<T>>,
+        slot: DropSlot<'a, 'b, PhantomData<T>>,
+    ) -> InitPinPhantomData<'a, 'b, T>
+    where
+        Self: 'a,
+    {
+        InitPinPhantomData { uninit, slot }
+    }
+}
+
+/// The pointer to the place being initialized.
+///
+/// This struct represents a pointer to the place being initialized, which
+/// appears in [structural initializers](crate::init::init) as `this`.
+/// It can be used to construct self-referential pointers in the place being
+/// initialized.
+///
+/// It can be safely destructured by [`munge`].
+pub struct ThisPtr<'a, T: ?Sized> {
+    ptr: NonNull<T>,
+    extent: NonNull<[u8]>,
+    _marker: PhantomData<&'a ()>,
+}
+
+impl<'a, T: ?Sized> Clone for ThisPtr<'a, T> {
+    #[inline]
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<'a, T: ?Sized> Copy for ThisPtr<'a, T> {}
+
+impl<'a, T: ?Sized> ThisPtr<'a, T> {
+    /// Constructs a new `ThisPtr` from a raw pointer.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    /// - `ptr` points to the place being initialized and it is valid for the
+    ///   duration of the initialization (e.g., it has a valid metadata if `T`
+    ///   is a DST);
+    /// - the returned pointer doesn't escape the initialization scope, e.g. by
+    ///   being stored in a static variable or being returned from the
+    ///   initializer.
+    #[inline]
+    pub const unsafe fn new_unchecked(ptr: NonNull<T>) -> Self {
+        let base = ptr.cast::<u8>();
+        // SAFETY: The caller ensures that `base` has a valid metadata.
+        let size = unsafe { core::mem::size_of_val_raw(ptr.as_ptr()) };
+
+        Self {
+            ptr,
+            extent: NonNull::slice_from_raw_parts(base, size),
+            _marker: PhantomData,
+        }
+    }
+
+    #[inline]
+    #[doc(hidden)]
+    pub const unsafe fn new_scoped(ptr: NonNull<T>, scope: &'a mut ()) -> Self {
+        let _ = scope;
+        unsafe { Self::new_unchecked(ptr) }
+    }
+
+    /// Retrieves the raw pointer to be initialized.
+    ///
+    /// # Safety
+    ///
+    /// This function is safe to call, but the caller must treat the returned
+    /// pointer as immutable and must not allow it to escape the initialization
+    /// scope.
+    #[inline]
+    #[allow(clippy::wrong_self_convention)]
+    pub const fn as_ptr(self) -> *mut T {
+        self.ptr.as_ptr()
+    }
+
+    /// Retrieves the non-null pointer to be initialized.
+    ///
+    /// # Safety
+    ///
+    /// This function is safe to call, but the caller must treat the returned
+    /// pointer as immutable and must not allow it to escape the initialization
+    /// scope.
+    #[inline]
+    #[allow(clippy::wrong_self_convention)]
+    pub const fn as_non_null(self) -> NonNull<T> {
+        self.ptr
+    }
+
+    /// Retrieves the memory region of the target place that contains the
+    /// pointer to be initialized.
+    #[inline]
+    pub const fn extent(self) -> NonNull<[u8]> {
+        self.extent
+    }
+}
+
+unsafe impl<'a, T: ?Sized> munge::Destructure for ThisPtr<'a, T> {
+    type Underlying = T;
+
+    type Destructuring = munge::Move;
+
+    #[inline]
+    fn underlying(&mut self) -> *mut Self::Underlying {
+        self.as_ptr()
+    }
+}
+
+unsafe impl<'a, T: ?Sized, U: ?Sized> munge::Restructure<U> for ThisPtr<'a, T> {
+    type Restructured = ThisPtr<'a, U>;
+
+    #[inline]
+    unsafe fn restructure(&self, ptr: *mut U) -> Self::Restructured {
+        ThisPtr {
+            ptr: unsafe { NonNull::new_unchecked(ptr) },
+            extent: self.extent,
+            _marker: PhantomData,
+        }
     }
 }
